@@ -12,7 +12,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "golden": "node scripts/make-golden.mjs"
   },
   "dependencies": {
     "jszip": "^3.10.2"

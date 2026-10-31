@@ -21,8 +21,14 @@ The microphone only works on `localhost` or `https://`. To try it on a phone, ru
 
 ## Layout
 
-- `index.html`, `src/` — the app
-- `src/legacy/app.js` — the prototype code, moved as-is (Phase 1 splits it up)
-- `tests/` — browser tests
-- `prototype/` — the original single-file prototype, kept as the sound reference
+- `src/dsp/` — audio engine: building blocks, rendering, source cleanup, WAV encoding
+- `src/recipes/` — one file per target sound, plus the built-in example sources
+- `src/ui/` — the page: source, recipes, sliders, variations, export
+- `tests/` — browser tests, run in Firefox
+- `tests/golden/` — reference sounds rendered from the original prototype
+- `prototype/` — the original single-file prototype
+
+## Reference sounds
+
+`tests/golden.test.ts` checks that every recipe still sounds exactly like the prototype. When you change a recipe's sound on purpose, the test fails; update `prototype/` or regenerate the references with `npm run golden` only once you're happy with the new sound.
 - `docs/BRIEF.md` — what we're building and the roadmap

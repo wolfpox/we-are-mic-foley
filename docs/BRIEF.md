@@ -42,18 +42,21 @@ Browsers render audio slightly differently. The same `recipe.json` gives an iden
 ### Microphone on phones
 Browsers allow the mic only on `https://` or `localhost`. Testing on a phone over Wi-Fi needs the dev server on HTTPS (for example `@vitejs/plugin-basic-ssl`). The deployed site is HTTPS, so this only affects development.
 
-## Target layout
+## Layout
 ```
 src/
-  dsp/       blocks.ts  render.ts  prep.ts  wav.ts
+  dsp/       blocks.ts  render.ts  prep.ts  wav.ts  rng.ts
   recipes/   footstepHard.ts  footstepSoft.ts  impactHard.ts
-             criticalHit.ts  whiff.ts  index.ts
+             criticalHit.ts  whiff.ts  index.ts  types.ts  examples.ts
   ui/        source.ts  recipes.ts  sliders.ts  variations.ts  export.ts
+             dom.ts  playback.ts  state.ts
   main.ts
-tests/       wav.test.ts  determinism.test.ts
+tests/       wav.test.ts  determinism.test.ts  golden.test.ts  golden/
 ```
 
 ## Roadmap
+Done: Phase 0 and Phase 1 (2026-10-31).
+
 0. **Setup.** Node LTS, git, Vite + TypeScript, Vitest browser tests in Playwright Firefox. The prototype runs as-is from `src/legacy/app.js`.
 1. **Port, no change in sound.** Split into the layout above. Save reference renders of each recipe from the prototype with fixed seeds and test against them. Test the WAV encoder. Remove the 4-second recording cap.
 2. **Easy start, small files.** Trim handles on the waveform, noise gate, one-tap re-record. Keep or discard single variations. Undo, A/B source vs result. Autosave the session. Loudness option. Ogg Vorbis and MP3 export, 22 kHz option. Goal: a newcomer gets from page open to downloaded pack in under 2 minutes.

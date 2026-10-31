@@ -6,10 +6,9 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "noEmit": true,
-    "allowJs": true,
-    "checkJs": false,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "types": ["vite/client"]
   },
   "include": ["src", "tests", "vite.config.ts"]

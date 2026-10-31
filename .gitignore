@@ -7,3 +7,4 @@ playwright-report/
 __screenshots__/
 *.log
 .DS_Store
+.vitest/

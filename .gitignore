@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.vitest-attachments/
+__screenshots__/
+*.log
+.DS_Store

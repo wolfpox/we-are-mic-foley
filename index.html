@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>We Are Mic Foley</title>
+  <meta name="description" content="Sounds Like A Good Idea. Turn sounds you record yourself into game-ready sound effects.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="tag">DIY game sound effects · v0.1</span>
+    <h1 class="brand">We Are Mic <span>Foley</span></h1>
+    <p class="tagline">Sounds Like A Good Idea</p>
+    <p class="lede">Record a sound with your mouth, your desk or a towel. Pick what it should become. Shape it with a few sliders, make variations, and export a game-ready pack.</p>
+  </header>
+
+  <section class="step" aria-labelledby="s1">
+    <div class="step-head"><span class="step-num">01</span><h2 id="s1">Source sound</h2></div>
+    <div class="row">
+      <button id="recBtn" class="rec" type="button"><span class="dot"></span><span id="recLabel">Record</span></button>
+      <label class="filebtn">Upload audio<input id="fileIn" type="file" accept="audio/*"></label>
+      <span class="hint">or try an example:</span>
+    </div>
+    <div class="row" id="examples"></div>
+    <p class="note" id="srcNote" hidden></p>
+    <div class="wavebox">
+      <div class="wavebar"><span id="srcName">No source</span><span id="srcDur"></span></div>
+      <canvas class="wave" id="srcWave" aria-label="Source waveform. Click to play."></canvas>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="s2">
+    <div class="step-head"><span class="step-num">02</span><h2 id="s2">Target sound</h2></div>
+    <div class="recipes" id="recipes"></div>
+    <p class="tip" id="tip"></p>
+  </section>
+
+  <section class="step" aria-labelledby="s3">
+    <div class="step-head"><span class="step-num">03</span><h2 id="s3">Shape it</h2></div>
+    <div class="sliders" id="sliders"></div>
+    <hr class="divider">
+    <div class="wavebox">
+      <div class="wavebar"><span id="outName">Result</span><span id="outDur"></span></div>
+      <canvas class="wave" id="outWave" aria-label="Result waveform. Click to play."></canvas>
+    </div>
+    <div class="row">
+      <button id="playOut" class="primary" type="button">▶ Play result</button>
+      <button id="playSrc" type="button">Play source</button>
+      <label class="toggle"><input id="autoplay" type="checkbox" checked> Play on every change</label>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="s4">
+    <div class="step-head"><span class="step-num">04</span><h2 id="s4">Variations and export</h2></div>
+    <p class="hint">Games repeat sounds constantly. Variations nudge pitch, tone and decay so the 40th footstep doesn't sound like the first.</p>
+    <div class="sliders">
+      <div class="slider">
+        <label for="varAmt">Variation amount <output id="varAmtOut">50</output></label>
+        <input id="varAmt" type="range" min="0" max="100" value="50">
+        <div class="ends"><span>Subtle</span><span>Wide</span></div>
+      </div>
+      <div class="slider">
+        <label for="varCount">How many</label>
+        <select id="varCount"><option>4</option><option selected>8</option><option>12</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <button id="genBtn" class="primary" type="button">Generate variations</button>
+      <button id="exportBtn" type="button" disabled>Export pack (.zip)</button>
+    </div>
+    <p class="note" id="exportNote" hidden></p>
+    <div class="vars" id="vars"><p class="empty">Variations appear here. Tap one to hear it.</p></div>
+  </section>
+
+
+  <footer>Exports are 16-bit 44.1 kHz mono WAV, trimmed and peak-normalized to −1 dBFS, with a recipe.json that reproduces the pack.</footer>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

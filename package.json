@@ -1,7 +1,7 @@
 {
   "name": "we-are-mic-foley",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sounds Like A Good Idea. Turn sounds you record yourself into game-ready sound effects.",
   "type": "module",
   "engines": {
@@ -16,7 +16,8 @@
     "golden": "node scripts/make-golden.mjs"
   },
   "dependencies": {
-    "jszip": "^3.10.2"
+    "jszip": "^3.10.2",
+    "wasm-media-encoders": "^0.7.0"
   },
   "devDependencies": {
     "@vitest/browser-playwright": "^5.0.5",

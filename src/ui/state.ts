@@ -4,6 +4,8 @@ import type { Params } from "../recipes/types";
 export interface Variation {
   seed: number;
   name: string;
+  /** False once the person discards it. Discarded variations are left out of the export. */
+  kept: boolean;
   buf: AudioBuffer;
 }
 

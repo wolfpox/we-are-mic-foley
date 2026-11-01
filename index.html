@@ -12,7 +12,7 @@
 <body>
 <div class="wrap">
   <header>
-    <span class="tag">DIY game sound effects · v0.1</span>
+    <span class="tag">DIY game sound effects · v0.2</span>
     <h1 class="brand">We Are Mic <span>Foley</span></h1>
     <p class="tagline">Sounds Like A Good Idea</p>
     <p class="lede">Record a sound with your mouth, your desk or a towel. Pick what it should become. Shape it with a few sliders, make variations, and export a game-ready pack.</p>
@@ -70,14 +70,44 @@
     </div>
     <div class="row">
       <button id="genBtn" class="primary" type="button">Generate variations</button>
-      <button id="exportBtn" type="button" disabled>Export pack (.zip)</button>
+      <button id="replaceBtn" type="button" hidden>Replace discarded</button>
+    </div>
+    <div class="vars" id="vars"><p class="empty">Variations appear here. Tap one to hear it.</p></div>
+    <hr class="divider">
+    <div class="sliders">
+      <div class="slider">
+        <label for="expFormat">File type</label>
+        <select id="expFormat">
+          <option value="ogg" selected>Ogg Vorbis (small, for game engines)</option>
+          <option value="mp3">MP3 (small, plays anywhere)</option>
+          <option value="wav">WAV (large, no quality loss)</option>
+        </select>
+      </div>
+      <div class="slider">
+        <label for="expQuality">Quality</label>
+        <select id="expQuality">
+          <option value="small">Smallest files</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div class="slider">
+        <label for="expRate">Sample rate</label>
+        <select id="expRate">
+          <option value="44100" selected>44.1 kHz (full)</option>
+          <option value="22050">22 kHz (a bit smaller, duller top end)</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint" id="formatHint"></p>
+    <div class="row">
+      <button id="exportBtn" class="primary" type="button" disabled>Export pack (.zip)</button>
     </div>
     <p class="note" id="exportNote" hidden></p>
-    <div class="vars" id="vars"><p class="empty">Variations appear here. Tap one to hear it.</p></div>
   </section>
 
 
-  <footer>Exports are 16-bit 44.1 kHz mono WAV, trimmed and peak-normalized to −1 dBFS, with a recipe.json that reproduces the pack.</footer>
+  <footer>Every sound is mono, trimmed and peak-normalized to −1 dBFS. Each pack includes a recipe.json that reproduces it. Your recordings never leave this device.</footer>
 </div>
 <script type="module" src="/src/main.ts"></script>
 </body>

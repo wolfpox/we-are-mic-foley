@@ -16,7 +16,7 @@ export function buildRecipes(): void {
     name.textContent = r.name;
     const file = document.createElement("span");
     file.className = "rfile";
-    file.textContent = r.file + "_01.wav";
+    file.textContent = r.file + "_01";
     b.append(name, file);
     b.onclick = () => selectRecipe(r.id, true);
     box.appendChild(b);

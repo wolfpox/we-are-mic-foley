@@ -2,15 +2,16 @@ import "./style.css";
 import { makeExample } from "./recipes/examples";
 import { RECIPES } from "./recipes";
 import { $ } from "./ui/dom";
-import { exportPack } from "./ui/export";
+import { exportPack, initExportControls } from "./ui/export";
 import { drawWave, play } from "./ui/playback";
 import { buildRecipes, selectRecipe } from "./ui/recipes";
 import { buildExamples, onFile, setSource, toggleRecord } from "./ui/source";
 import { state } from "./ui/state";
-import { generate, redrawVariations } from "./ui/variations";
+import { generate, redrawVariations, replaceDiscarded } from "./ui/variations";
 
 buildExamples();
 buildRecipes();
+initExportControls();
 
 $("recBtn").onclick = toggleRecord;
 $("fileIn").onchange = onFile;
@@ -22,6 +23,7 @@ $("varAmt").oninput = () => {
   $("varAmtOut").textContent = $<HTMLInputElement>("varAmt").value;
 };
 $("genBtn").onclick = generate;
+$("replaceBtn").onclick = replaceDiscarded;
 $("exportBtn").onclick = exportPack;
 
 selectRecipe(RECIPES[0].id, false);

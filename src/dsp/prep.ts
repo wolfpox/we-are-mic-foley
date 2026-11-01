@@ -1,6 +1,6 @@
 import { lerp } from "./rng";
 
-/** Longest selection used as a source, in seconds. Recipes are tuned for short sounds. */
+/** Longest take, in seconds. Game sounds are short. */
 export const MAX_SOURCE_SECONDS = 3;
 /** Longest recording or upload kept for trimming, in seconds. */
 export const MAX_RAW_SECONDS = 30;
@@ -48,29 +48,53 @@ function noiseFloor(d: Float32Array, sampleRate: number, onset: number): number 
   return peaks[Math.floor(peaks.length / 2)];
 }
 
+/** Most takes found in one recording. */
+export const MAX_TAKES = 16;
+
 /**
- * Picks the part worth using: from just before the first clear sound to just after it fades,
- * stopping at the first pause of 150 ms or more, at most MAX_SOURCE_SECONDS long.
+ * Finds each separate sound in a recording (a "take"): from just before it starts to just after
+ * it fades, ending at a pause of 150 ms or more, each at most MAX_SOURCE_SECONDS long. Sounds much
+ * quieter than the loudest one (bumps, breaths) are skipped. Always returns at least one take.
  */
-export function autoTrim(m: Mono): Range {
+export function findTakes(m: Mono): Range[] {
   const { data: d, sampleRate: sr } = m;
   const n = d.length;
   const peak = peakOf(d);
-  let a = 0;
-  while (a < n && Math.abs(d[a]) < peak * 0.06) a++;
+  const onset = peak * 0.06;
+  const next = (from: number) => {
+    let i = from;
+    while (i < n && Math.abs(d[i]) < onset) i++;
+    return i;
+  };
+  let a = next(0);
   // "Quiet" means below 1% of the peak, or close to the background noise if that is louder
   const quiet = Math.max(peak * 0.01, noiseFloor(d, sr, a) * 2);
   const pause = Math.floor(0.15 * sr);
-  let b = a;
-  for (let i = a, run = 0; i < n; i++) {
-    if (Math.abs(d[i]) >= quiet) {
-      b = i;
-      run = 0;
-    } else if (++run >= pause) break;
+  const pre = Math.floor(0.004 * sr);
+  const post = Math.floor(0.02 * sr);
+  const max = Math.floor(MAX_SOURCE_SECONDS * sr);
+  const found: Range[] = [];
+  while (a < n) {
+    let b = a;
+    for (let i = a, run = 0; i < n; i++) {
+      if (Math.abs(d[i]) >= quiet) {
+        b = i;
+        run = 0;
+      } else if (++run >= pause) break;
+    }
+    const start = Math.max(0, a - pre, found.length ? found[found.length - 1].end : 0);
+    const end = Math.min(n, b + post, start + max);
+    found.push({ start, end: Math.max(start + 1, end) });
+    a = next(b + 1);
   }
-  a = Math.max(0, a - Math.floor(0.004 * sr));
-  b = Math.min(n, b + Math.floor(0.02 * sr), a + MAX_SOURCE_SECONDS * sr);
-  return { start: a, end: Math.max(a + 1, b) };
+  if (!found.length) return [{ start: 0, end: Math.max(1, Math.min(n, max)) }];
+  const loud = found.filter((r) => peakOf(d, r.start, r.end) >= peak * 0.25);
+  return (loud.length ? loud : found).slice(0, MAX_TAKES);
+}
+
+/** The first take: the part worth using when only one is needed. */
+export function autoTrim(m: Mono): Range {
+  return findTakes(m)[0];
 }
 
 /** Keeps a range within the recording, at least 10 ms and at most MAX_SOURCE_SECONDS long. */

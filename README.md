@@ -2,7 +2,7 @@
 
 *Sounds Like A Good Idea.*
 
-A free browser tool that turns sounds you record yourself (mouth noises, desk taps, cloth swishes) into game-ready sound effects. Pick the sound you want, record a source, shape it with a few plain-language sliders, generate variations, and export a named pack.
+A free browser tool that turns sounds you record yourself (mouth noises, desk taps, cloth swishes) into game-ready sound effects. Record a few takes, shape them with plain effects (pitch, tone, compress, distort, lo-fi, reverb), stack them in layers, make a set of variations and export a named pack. Nothing is synthesized: every sound you export is made from your recordings.
 
 Everything runs in your browser. Your recordings never leave your device.
 
@@ -23,14 +23,9 @@ The microphone only works on `localhost` or `https://`. To try it on a phone, ru
 
 ## Layout
 
-- `src/dsp/` — audio engine: building blocks, rendering, source cleanup, WAV encoding
-- `src/recipes/` — one file per target sound, plus the built-in example sources
-- `src/ui/` — the page: source, recipes, sliders, variations, export
+- `src/dsp/` — audio engine: take finding and cleanup, layer rendering and effects, variations, loudness, encoding
+- `src/sounds/` — built-in example recordings and the "Ideas" how-tos
+- `src/ui/` — the page: library, layers, variations, export, undo, autosave
 - `tests/` — browser tests, run in Firefox
-- `tests/golden/` — reference sounds rendered from the original prototype
-- `prototype/` — the original single-file prototype
-
-## Reference sounds
-
-`tests/golden.test.ts` checks that every recipe still sounds exactly like the prototype. When you change a recipe's sound on purpose, the test fails; update `prototype/` or regenerate the references with `npm run golden` only once you're happy with the new sound.
+- `prototype/` — the original single-file prototype (the recipe-based v0.2 is tagged `v0.2`)
 - `docs/BRIEF.md` — what we're building and the roadmap

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { encodeSound, resample, type ExportOptions } from "../src/dsp/encode";
-import { render } from "../src/dsp/render";
-import { makeExample } from "../src/recipes/examples";
-import { byId, defaultParams } from "../src/recipes";
+import { findTakes, sliceSource } from "../src/dsp/prep";
+import { DEFAULT_FX, renderSound } from "../src/dsp/sound";
+import { makeExample } from "../src/sounds/examples";
 
 async function sound(): Promise<AudioBuffer> {
-  const r = byId.impact_hard;
-  return render(r, makeExample("Knuckle knock"), defaultParams(r), 1, 0);
+  const m = makeExample("Knuckle knock");
+  const buf = sliceSource(m, findTakes(m)[0])!;
+  return renderSound([{ buf, volume: 0, pitch: -5, tone: -0.2, delay: 0, reverse: false }], { ...DEFAULT_FX, compress: 0.6, reverb: 0.2 });
 }
 
 const decode = (bytes: Uint8Array) => new OfflineAudioContext(1, 1, 44100).decodeAudioData(bytes.slice().buffer);

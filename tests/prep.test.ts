@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MAX_SOURCE_SECONDS, autoTrim, clampRange, noiseGate, sliceSource, toMono, type Mono } from "../src/dsp/prep";
+import { MAX_SOURCE_SECONDS, autoTrim, clampRange, findTakes, noiseGate, sliceSource, toMono, type Mono } from "../src/dsp/prep";
+import { EXAMPLES, makeExample } from "../src/sounds/examples";
 import { mulberry32 } from "../src/dsp/rng";
 
 const SR = 48000;
@@ -112,5 +113,40 @@ describe("sliceSource", () => {
     const m: Mono = { data: new Float32Array(SR), sampleRate: SR };
     m.data[SR - 1] = 0.5;
     expect(sliceSource(m, { start: 0, end: SR / 2 })).toBeNull();
+  });
+});
+
+describe("findTakes", () => {
+  /** Hiss with loud bursts at the given times (seconds), plus an optional quiet bump. */
+  function bursts(times: number[], bump?: number): Mono {
+    const rand = mulberry32(3);
+    const d = new Float32Array(SR * 5);
+    for (let i = 0; i < d.length; i++) d[i] = (rand() * 2 - 1) * 0.01;
+    for (const t of times) for (let i = 0; i < 0.08 * SR; i++) d[Math.floor(t * SR) + i] += Math.sin(i * 0.15) * 0.8 * Math.exp(-i / (0.015 * SR));
+    if (bump !== undefined) for (let i = 0; i < 0.03 * SR; i++) d[Math.floor(bump * SR) + i] += Math.sin(i * 0.1) * 0.08;
+    return { data: d, sampleRate: SR };
+  }
+
+  it("finds each sound separately", () => {
+    const takes = findTakes(bursts([0.5, 1.4, 2.2, 3.5]));
+    expect(takes.map((t) => Math.round((t.start / SR) * 10) / 10)).toEqual([0.5, 1.4, 2.2, 3.5]);
+    for (const t of takes) expect((t.end - t.start) / SR).toBeLessThan(0.4);
+  });
+
+  it("skips quiet bumps between takes", () => {
+    expect(findTakes(bursts([0.5, 2], 1.2))).toHaveLength(2);
+  });
+
+  it("never overlaps takes", () => {
+    const takes = findTakes(bursts([0.5, 0.75, 1.0]));
+    for (let i = 1; i < takes.length; i++) expect(takes[i].start).toBeGreaterThanOrEqual(takes[i - 1].end);
+  });
+
+  it("finds three takes in every built-in example", () => {
+    for (const name of EXAMPLES) expect(findTakes(makeExample(name)), name).toHaveLength(3);
+  });
+
+  it("returns one take for a single sound", () => {
+    expect(findTakes(hissWithBurst())).toHaveLength(1);
   });
 });

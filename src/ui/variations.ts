@@ -1,10 +1,13 @@
 import { matchLoudnessGains } from "../dsp/loudness";
-import { render } from "../dsp/render";
-import { byId } from "../recipes";
+import { ALL_TAKES, spreadPitches, takeOrder, type VarSpec } from "../dsp/sound";
+import { mulberry32 } from "../dsp/rng";
+import { percent, slider } from "./controls";
 import { $ } from "./dom";
+import { renderBase, renderVariation } from "./engine";
+import { commit } from "./history";
 import { scheduleSave } from "./persist";
 import { drawWave, ms, play } from "./playback";
-import { state, type Variation, type VariationMeta } from "./state";
+import { clipById, copyClip, soundKey, state, usedClips, type VarMeta, type Variation } from "./state";
 
 const EMPTY = '<p class="empty">Variations appear here. Tap one to hear it.</p>';
 
@@ -14,17 +17,17 @@ let renderToken = 0;
 /** Re-renders the base sound shortly after the last change, so slider drags don't queue up renders. */
 export function scheduleRender(autoplay: boolean): void {
   clearTimeout(renderTimer);
+  updateStale();
   renderTimer = setTimeout(async () => {
-    if (!state.src) return;
+    const p = state.project;
     const token = ++renderToken;
-    const r = byId[state.recipe];
-    const buf = await render(r, state.src, state.params[r.id], 1, 0);
+    const job = renderBase(p.layers, p.fx, p.clips);
+    const buf = job && (await job);
     if (token !== renderToken) return; // a newer render started meanwhile
     state.out = buf;
-    $("outName").textContent = r.file + " · base";
     $("outDur").textContent = ms(buf);
     drawWave($<HTMLCanvasElement>("outWave"), buf);
-    if (autoplay && $<HTMLInputElement>("autoplay").checked) play(buf);
+    if (buf && autoplay && $<HTMLInputElement>("autoplay").checked) play(buf);
   }, 140);
 }
 
@@ -34,8 +37,6 @@ export function clearVars(): void {
   renderTiles();
   scheduleSave();
 }
-
-const variation = (seed: number, name: string, kept: boolean, rendered: AudioBuffer): Variation => ({ seed, name, kept, rendered, buf: rendered, gain: 1 });
 
 function scaled(b: AudioBuffer, gain: number): AudioBuffer {
   if (gain === 1) return b;
@@ -68,33 +69,57 @@ export function setEvenLoudness(on: boolean): void {
   redrawVariations();
 }
 
-const keptCount = () => state.vars.filter((v) => v.kept).length;
-
-/** Name for the n-th file (1-based), e.g. footstep_hard_03. */
+/** Name for the n-th file (1-based), e.g. footstep_03. */
 export const varName = (file: string, n: number) => `${file}_${String(n).padStart(2, "0")}`;
+
+/** Lowercase letters, digits, - and _ only, so the names work in every engine and file system. */
+export const fileBase = (name: string) =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || "sound";
+
+/** Shows a hint when the settings changed after the variations were made. */
+function updateStale(): void {
+  const m = state.varMeta;
+  const p = state.project;
+  const stale = !!m && state.vars.length > 0 && soundKey(m.layers, m.fx, m.spread, m.sources) !== soundKey(p.layers, p.fx, p.spread, usedClips(p));
+  $("staleNote").hidden = !stale;
+}
 
 /** Updates the buttons and counts that depend on which variations are kept. */
 function updateControls(): void {
   const total = state.vars.length;
-  const kept = keptCount();
+  const kept = state.vars.filter((v) => v.kept).length;
   const discarded = total - kept;
   $<HTMLButtonElement>("exportBtn").disabled = kept === 0;
   $<HTMLButtonElement>("exportBtn").textContent = kept && discarded ? `Export ${kept} sounds (.zip)` : "Export pack (.zip)";
   const replace = $<HTMLButtonElement>("replaceBtn");
   replace.hidden = discarded === 0;
   replace.textContent = `Replace ${discarded} discarded`;
+  updateStale();
+}
+
+/** What a tile says about its variation, e.g. "take 2 · +1.4 st", or "takes 2, 3" with several recordings. */
+function describe(v: Variation, m: VarMeta): string {
+  const takes = [...takeGroups(m).values()].filter((g) => g.count > 1).map((g) => v.takes[g.layers[0]] + 1);
+  const p = Math.round(v.pitch * 10) / 10;
+  return [takes.length ? `take${takes.length > 1 ? "s" : ""} ${takes.join(", ")}` : "", p ? `${p > 0 ? "+" : "−"}${Math.abs(p)} st` : ""].filter(Boolean).join(" · ");
 }
 
 /** Draws one tile per variation: tap to play, with a discard / keep toggle. */
 function renderTiles(): Element[] {
   const box = $("vars");
   box.innerHTML = "";
-  if (!state.vars.length) {
+  updateControls();
+  const m = state.varMeta;
+  if (!state.vars.length || !m) {
     box.innerHTML = EMPTY;
-    updateControls();
     return [];
   }
-  const tiles = state.vars.map((v, i) => {
+  return state.vars.map((v, i) => {
     const tile = document.createElement("div");
     tile.className = "var";
     tile.classList.toggle("discarded", !v.kept);
@@ -107,7 +132,10 @@ function renderTiles(): Element[] {
     const nm = document.createElement("span");
     nm.className = "vname";
     nm.textContent = v.name;
-    playBtn.append(c, nm);
+    const what = document.createElement("span");
+    what.className = "vwhat";
+    what.textContent = describe(v, m);
+    playBtn.append(c, nm, what);
     playBtn.onclick = () => {
       box.querySelectorAll(".var").forEach((x) => x.classList.remove("playing"));
       tile.classList.add("playing");
@@ -137,8 +165,6 @@ function renderTiles(): Element[] {
     drawWave(c, v.buf);
     return tile;
   });
-  updateControls();
-  return tiles;
 }
 
 /** Plays the given tiles one after another, so the spread is easy to judge. */
@@ -169,50 +195,89 @@ async function busy<T>(btn: HTMLButtonElement, label: string, work: () => Promis
   }
 }
 
-const newSeed = () => (Math.random() * 1e9) | 0;
+const newSeed = () => (Math.random() * 2 ** 31) | 0;
+
+/**
+ * Which layers vary their take, grouped by recording: layers that play the same recording use the
+ * same take in each variation, so a pitched-down copy stays a copy of the same hit.
+ */
+function takeGroups(m: VarMeta): Map<string, { count: number; layers: number[] }> {
+  const groups = new Map<string, { count: number; layers: number[] }>();
+  m.layers.forEach((l, i) => {
+    if (l.take !== ALL_TAKES) return;
+    const g = groups.get(l.clip) ?? { count: clipById(l.clip, m.sources)?.takes.length ?? 1, layers: [] };
+    g.layers.push(i);
+    groups.set(l.clip, g);
+  });
+  return groups;
+}
+
+/** Specs for a whole set: pitches spread evenly, and each recording works through all its takes. */
+function planSet(n: number, m: VarMeta, seed: number): VarSpec[] {
+  const rand = mulberry32(seed);
+  const pitches = spreadPitches(n, m.spread.pitch, rand);
+  const takes = pitches.map(() => m.layers.map((l) => Math.max(0, l.take)));
+  for (const g of takeGroups(m).values()) {
+    const order = takeOrder(n, g.count, rand);
+    for (let k = 0; k < n; k++) for (const i of g.layers) takes[k][i] = order[k];
+  }
+  return pitches.map((pitch, k) => ({ seed: newSeed(), pitch, takes: takes[k] }));
+}
+
+/** A single new spec, for replacing a discarded variation. */
+function planOne(m: VarMeta): VarSpec {
+  const rand = mulberry32(newSeed());
+  const takes = m.layers.map((l) => Math.max(0, l.take));
+  for (const g of takeGroups(m).values()) {
+    const t = Math.floor(rand() * g.count);
+    for (const i of g.layers) takes[i] = t;
+  }
+  return { seed: newSeed(), pitch: (rand() * 2 - 1) * m.spread.pitch, takes };
+}
+
+async function make(m: VarMeta, spec: VarSpec, name: string, kept = true): Promise<Variation | null> {
+  const job = renderVariation(m.layers, m.fx, m.spread, m.sources, spec);
+  const rendered = job && (await job);
+  return rendered ? { ...spec, name, kept, rendered, buf: rendered, gain: 1 } : null;
+}
 
 export async function generate(): Promise<void> {
-  const src = state.src;
-  if (!src) return;
-  const r = byId[state.recipe];
-  const n = Number($<HTMLSelectElement>("varCount").value);
-  const amt = Number($<HTMLInputElement>("varAmt").value) / 100;
-  const params = { ...state.params[r.id] };
-  const vars: Variation[] = await busy($<HTMLButtonElement>("genBtn"), "Rendering…", async () => {
+  const p = state.project;
+  const n = p.count;
+  const m: VarMeta = {
+    layers: p.layers.map((l) => ({ ...l })),
+    fx: { ...p.fx },
+    spread: { ...p.spread },
+    name: fileBase(p.name),
+    sources: usedClips(p).map(copyClip),
+  };
+  if (!m.layers.length) return;
+  const specs = planSet(n, m, newSeed());
+  const vars = await busy($<HTMLButtonElement>("genBtn"), "Rendering…", async () => {
     const out: Variation[] = [];
-    for (let i = 0; i < n; i++) {
-      const seed = newSeed();
-      out.push(variation(seed, varName(r.file, i + 1), true, await render(r, src, params, seed, amt)));
+    for (const [i, s] of specs.entries()) {
+      const v = await make(m, s, varName(m.name, i + 1));
+      if (v) out.push(v);
     }
     return out;
   });
   state.vars = vars;
-  const trimMs = (n: number) => (state.raw ? Math.round((n / state.raw.sampleRate) * 1000) : 0);
+  state.varMeta = m;
   levelPack();
-  state.varMeta = {
-    recipe: r.id,
-    params,
-    variation: amt,
-    source: state.srcName,
-    sourceTrimMs: [trimMs(state.trim?.start ?? 0), trimMs(state.trim?.end ?? 0)],
-    noiseCleanup: state.gate,
-  };
   const tiles = renderTiles();
   scheduleSave();
   audition(tiles, vars.map((v) => v.buf));
 }
 
-/** Re-renders saved variations from their seeds (after a reload). Plays nothing. */
-export async function restoreVariations(meta: VariationMeta, saved: { seed: number; kept: boolean }[]): Promise<void> {
-  const src = state.src;
-  const r = byId[meta.recipe];
-  if (!src || !r || meta.recipe !== state.recipe || !saved.length) return;
+/** Re-renders saved variations from their specs (after a reload). Plays nothing. */
+export async function restoreVariations(meta: VarMeta, saved: (VarSpec & { kept: boolean })[]): Promise<void> {
   const vars: Variation[] = [];
-  for (const [i, v] of saved.entries()) {
-    vars.push(variation(v.seed, varName(r.file, i + 1), v.kept, await render(r, src, meta.params, v.seed, meta.variation)));
+  for (const [i, s] of saved.entries()) {
+    const v = await make(meta, s, varName(meta.name, i + 1), s.kept);
+    if (v) vars.push(v);
   }
   state.vars = vars;
-  state.varMeta = meta;
+  state.varMeta = vars.length ? meta : null;
   levelPack();
   renderTiles();
 }
@@ -220,14 +285,12 @@ export async function restoreVariations(meta: VariationMeta, saved: { seed: numb
 /** Re-rolls only the discarded variations, with the settings the set was made with. */
 export async function replaceDiscarded(): Promise<void> {
   const m = state.varMeta;
-  const src = state.src;
-  if (!m || !src) return;
-  const r = byId[m.recipe];
+  if (!m) return;
   const slots = state.vars.map((v, i) => (v.kept ? -1 : i)).filter((i) => i >= 0);
   await busy($<HTMLButtonElement>("replaceBtn"), "Rendering…", async () => {
     for (const i of slots) {
-      const seed = newSeed();
-      state.vars[i] = variation(seed, state.vars[i].name, true, await render(r, src, m.params, seed, m.variation));
+      const v = await make(m, planOne(m), state.vars[i].name);
+      if (v) state.vars[i] = v;
     }
   });
   levelPack();
@@ -236,8 +299,78 @@ export async function replaceDiscarded(): Promise<void> {
   audition(slots.map((i) => tiles[i]), slots.map((i) => state.vars[i].buf));
 }
 
+/** Renames the current variations to match the sound's name. */
+export function renameVariations(): void {
+  const m = state.varMeta;
+  if (!m) return;
+  m.name = fileBase(state.project.name);
+  state.vars.forEach((v, i) => (v.name = varName(m.name, i + 1)));
+  renderTiles();
+  scheduleSave();
+}
+
 export function redrawVariations(): void {
   $("vars")
     .querySelectorAll<HTMLCanvasElement>(".var canvas")
     .forEach((c, i) => state.vars[i] && drawWave(c, state.vars[i].buf));
 }
+
+/** Variation controls, from the project's settings. */
+export function renderSpread(): void {
+  const p = state.project;
+  const box = $("spread");
+  box.innerHTML = "";
+  const sp = p.spread;
+  box.append(
+    slider({
+      id: "spPitch", label: "Pitch spread", min: 0, max: 6, step: 0.5, value: sp.pitch, lo: "Same", hi: "±6 st",
+      hint: "Spread evenly across the set, so no two sound alike.",
+      format: (v) => (v ? `±${v} st` : "Off"),
+      onInput: (v) => { sp.pitch = v; updateStale(); },
+      onChange: commit,
+    }),
+    slider({
+      id: "spTone", label: "Tone spread", min: 0, max: 100, value: Math.round(sp.tone * 100), lo: "Same", hi: "Wide",
+      format: percent,
+      onInput: (v) => { sp.tone = v / 100; updateStale(); },
+      onChange: commit,
+    }),
+    slider({
+      id: "spTiming", label: "Timing spread", min: 0, max: 100, value: Math.round(sp.timing * 100), lo: "Tight", hi: "Loose",
+      hint: "Shifts layers against each other. Needs two or more layers.",
+      format: (v) => (v ? `±${Math.round(v * 0.4)} ms` : "Off"),
+      onInput: (v) => { sp.timing = v / 100; updateStale(); },
+      onChange: commit,
+    }),
+  );
+  $<HTMLSelectElement>("varCount").value = String(p.count);
+  $<HTMLInputElement>("soundName").value = p.name;
+  updateNamePreview();
+}
+
+function updateNamePreview(): void {
+  $("namePreview").textContent = `${varName(fileBase(state.project.name), 1)}.${$<HTMLSelectElement>("expFormat").value}`;
+}
+
+export function initVariations(): void {
+  $("varCount").addEventListener("change", () => {
+    state.project.count = Number($<HTMLSelectElement>("varCount").value);
+    commit();
+  });
+  $("soundName").addEventListener("change", () => {
+    const el = $<HTMLInputElement>("soundName");
+    state.project.name = fileBase(el.value);
+    el.value = state.project.name;
+    renameVariations();
+    updateNamePreview();
+    commit();
+  });
+  $("expFormat").addEventListener("change", updateNamePreview);
+  $("evenLoud").addEventListener("change", () => {
+    setEvenLoudness($<HTMLInputElement>("evenLoud").checked);
+    scheduleSave();
+  });
+  $("genBtn").onclick = generate;
+  $("replaceBtn").onclick = replaceDiscarded;
+}
+

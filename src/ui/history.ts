@@ -1,17 +1,12 @@
-import type { Mono, Range } from "../dsp/prep";
-import type { Params } from "../recipes/types";
 import { $ } from "./dom";
 import { scheduleSave } from "./persist";
-import { state } from "./state";
+import { copyProject, state, type Project } from "./state";
 
-/** Everything that shapes the sound. Variations aren't included; they're re-rolled after any change. */
+/** Everything you've made except the variations (those keep the settings they were made with). */
 export interface Snapshot {
-  recipe: string;
-  params: Record<string, Params>;
-  raw: Mono | null;
-  srcName: string;
-  trim: Range | null;
-  gate: number;
+  project: Project;
+  selClip: string;
+  selTake: number;
 }
 
 const LIMIT = 50;
@@ -21,26 +16,10 @@ let current: Snapshot | null = null;
 let restoreFn: (s: Snapshot) => void = () => {};
 let restoring = false;
 
-const copyParams = (p: Record<string, Params>) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, { ...v }]));
+export const snapshot = (): Snapshot => ({ project: copyProject(state.project), selClip: state.selClip, selTake: state.selTake });
 
-export function snapshot(): Snapshot {
-  return {
-    recipe: state.recipe,
-    params: copyParams(state.params),
-    raw: state.raw, // recordings are never modified in place, so sharing is safe
-    srcName: state.srcName,
-    trim: state.trim && { ...state.trim },
-    gate: state.gate,
-  };
-}
-
-const same = (a: Snapshot, b: Snapshot) =>
-  a.recipe === b.recipe &&
-  a.raw === b.raw &&
-  a.gate === b.gate &&
-  a.trim?.start === b.trim?.start &&
-  a.trim?.end === b.trim?.end &&
-  JSON.stringify(a.params) === JSON.stringify(b.params);
+/** Recordings never change, so comparing them by id is enough. */
+const key = (s: Snapshot) => JSON.stringify(s.project, (k, v) => (k === "raw" ? undefined : v));
 
 function updateButtons(): void {
   $<HTMLButtonElement>("undoBtn").disabled = !undoStack.length;
@@ -55,6 +34,8 @@ export function initHistory(restore: (s: Snapshot) => void): void {
   $("redoBtn").addEventListener("click", redo);
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    // Let text fields undo their own typing
+    if (e.target instanceof HTMLInputElement && e.target.type === "text") return;
     const k = e.key.toLowerCase();
     if (k === "z" && !e.shiftKey) undo();
     else if ((k === "z" && e.shiftKey) || k === "y") redo();
@@ -64,11 +45,15 @@ export function initHistory(restore: (s: Snapshot) => void): void {
   updateButtons();
 }
 
-/** Call after a finished change (slider released, recipe picked, new recording…). */
+/** Call after a finished change (slider released, recording added, take trimmed…). */
 export function commit(): void {
   if (restoring || !current) return;
   const s = snapshot();
-  if (same(s, current)) return;
+  if (key(s) === key(current)) {
+    current = s; // selection may have moved
+    scheduleSave();
+    return;
+  }
   undoStack.push(current);
   if (undoStack.length > LIMIT) undoStack.shift();
   redoStack.length = 0;
@@ -92,7 +77,7 @@ function go(from: Snapshot[], to: Snapshot[]): void {
   current = s;
   restoring = true;
   try {
-    restoreFn({ ...s, params: copyParams(s.params) });
+    restoreFn({ ...s, project: copyProject(s.project) });
   } finally {
     restoring = false;
   }

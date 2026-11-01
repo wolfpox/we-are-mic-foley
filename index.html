@@ -12,83 +12,105 @@
 <body>
 <div class="wrap">
   <header>
-    <span class="tag">DIY game sound effects · v0.2</span>
+    <span class="tag">DIY game sound effects · v0.3</span>
     <h1 class="brand">We Are Mic <span>Foley</span></h1>
     <p class="tagline">Sounds Like A Good Idea</p>
-    <p class="lede">Pick the sound your game needs. Record something close with your mouth, your desk or a towel. Shape it with a few sliders, make variations, and export a game-ready pack.</p>
+    <p class="lede">Record sounds with your mouth, hands, desk or a towel. Shape them with plain effects, stack them in layers, make a set of variations and export a game-ready pack. Your recording stays the star.</p>
   </header>
 
   <section class="step" aria-labelledby="s1">
-    <div class="step-head"><span class="step-num">01</span><h2 id="s1">What sound do you need?</h2></div>
-    <div class="recipes" id="recipes"></div>
-  </section>
-
-  <section class="step" aria-labelledby="s2">
-    <div class="step-head"><span class="step-num">02</span><h2 id="s2">Record it</h2></div>
-    <p class="tip" id="tip"></p>
+    <div class="step-head"><span class="step-num">01</span><h2 id="s1">Record your sounds</h2></div>
+    <p class="tip"><b>Tip:</b> make the same sound 3 to 5 times in one recording, with a short pause between. Each one becomes a <b>take</b>, and every variation uses a different take. That's what makes them sound natural.</p>
     <div class="row">
       <button id="recBtn" class="rec" type="button"><span class="dot"></span><span id="recLabel">Record</span></button>
       <span class="meter" id="recMeter" hidden aria-hidden="true"><span id="recLevel"></span></span>
       <label class="filebtn">Upload audio<input id="fileIn" type="file" accept="audio/*"></label>
     </div>
-    <p class="hint">No mic handy? Start from an example:</p>
+    <p class="hint">No mic handy? Add an example:</p>
     <div class="row" id="examples"></div>
     <p class="note" id="srcNote" hidden></p>
-    <div class="wavebox">
-      <div class="wavebar"><span id="srcName">No source</span><span id="srcDur"></span></div>
-      <div class="trim">
-        <canvas class="wave" id="srcWave" aria-label="Source waveform. Tap to hear the selected part."></canvas>
-        <div class="trim-shade" id="shadeL"></div>
-        <div class="trim-shade" id="shadeR"></div>
-        <div class="trim-handle" id="trimStart" role="slider" tabindex="0" aria-label="Start of the part to use"></div>
-        <div class="trim-handle" id="trimEnd" role="slider" tabindex="0" aria-label="End of the part to use"></div>
+    <h3 class="sub">Your sounds</h3>
+    <div class="clips" id="clips"></div>
+    <div class="editor" id="clipEditor" hidden>
+      <div class="row">
+        <input id="clipName" class="text" type="text" maxlength="60" aria-label="Name of this recording">
+        <button id="delClip" type="button">Delete</button>
       </div>
-      <p class="hint">Drag the handles to pick the part to use. Tap the waveform to hear it.</p>
-    </div>
-    <div class="sliders">
-      <div class="slider">
-        <label for="gateAmt">Clean up background noise <output id="gateOut">Off</output></label>
-        <input id="gateAmt" type="range" min="0" max="100" value="0">
-        <div class="ends"><span>Off</span><span>Strong</span></div>
+      <div class="wavebox">
+        <div class="wavebar"><span id="srcName"></span><span id="srcDur"></span></div>
+        <div class="trim">
+          <canvas class="wave" id="srcWave" aria-label="Recording waveform. Tap to hear the selected take."></canvas>
+          <div class="trim-shade" id="shadeL"></div>
+          <div class="trim-shade" id="shadeR"></div>
+          <div class="trim-handle" id="trimStart" role="slider" tabindex="0" aria-label="Start of the take"></div>
+          <div class="trim-handle" id="trimEnd" role="slider" tabindex="0" aria-label="End of the take"></div>
+        </div>
+      </div>
+      <div class="row" id="takes"></div>
+      <div class="row">
+        <button id="addTake" type="button">+ Add take</button>
+        <button id="delTake" type="button">Remove this take</button>
+      </div>
+      <p class="hint">Takes are found automatically. Drag the handles to adjust the selected one; tap the waveform to hear it.</p>
+      <div class="sliders">
+        <div class="slider">
+          <label for="gateAmt">Clean up background noise <output id="gateOut">Off</output></label>
+          <input id="gateAmt" type="range" min="0" max="100" value="0">
+          <div class="ends"><span>Off</span><span>Strong</span></div>
+          <p class="slider-hint">Turns down hiss and room sound between and after the takes.</p>
+        </div>
       </div>
     </div>
+    <details class="ideas-box">
+      <summary>Ideas: what to record, and how to shape it</summary>
+      <div class="ideas" id="ideas"></div>
+    </details>
+    <p class="note" id="ideaNote" hidden></p>
   </section>
 
-  <section class="step" aria-labelledby="s3">
-    <div class="step-head"><span class="step-num">03</span><h2 id="s3">Shape it</h2></div>
-    <div class="sliders" id="sliders"></div>
+  <section class="step" aria-labelledby="s2">
+    <div class="step-head"><span class="step-num">02</span><h2 id="s2">Shape it</h2></div>
+    <p class="hint">Everything starts off, so you hear your recording as it is. Pitch also changes length, like a tape: lower is slower and bigger, higher is quicker and smaller. 12 semitones (st) is an octave.</p>
+    <div class="layers" id="layers"></div>
+    <div class="row">
+      <button id="addLayer" type="button">+ Add a layer</button>
+      <span class="hint">Stack sounds: a slap plus a low thump makes a bigger hit.</span>
+    </div>
+    <h3 class="sub">Effects on the whole sound</h3>
+    <div class="sliders" id="fx"></div>
     <hr class="divider">
     <div class="wavebox">
-      <div class="wavebar"><span id="outName">Result</span><span id="outDur"></span></div>
+      <div class="wavebar"><span>Result</span><span id="outDur"></span></div>
       <canvas class="wave" id="outWave" aria-label="Result waveform. Click to play."></canvas>
     </div>
     <div class="row">
       <button id="playOut" class="primary" type="button">▶ Play result</button>
-      <button id="playSrc" type="button">Play source</button>
-      <button id="compareBtn" type="button">Compare</button>
+      <button id="compareBtn" type="button">Before / after</button>
       <label class="toggle"><input id="autoplay" type="checkbox" checked> Play on every change</label>
     </div>
   </section>
 
-  <section class="step" aria-labelledby="s4">
-    <div class="step-head"><span class="step-num">04</span><h2 id="s4">Variations and export</h2></div>
-    <p class="hint">Games repeat sounds constantly. Variations nudge pitch, tone and decay so the 40th footstep doesn't sound like the first.</p>
+  <section class="step" aria-labelledby="s3">
+    <div class="step-head"><span class="step-num">03</span><h2 id="s3">Variations and export</h2></div>
+    <p class="hint">Games repeat sounds constantly. Each variation uses a different take and a different pitch, so the 40th footstep doesn't sound like the first.</p>
     <div class="sliders">
       <div class="slider">
-        <label for="varAmt">Variation amount <output id="varAmtOut">50</output></label>
-        <input id="varAmt" type="range" min="0" max="100" value="50">
-        <div class="ends"><span>Subtle</span><span>Wide</span></div>
+        <label for="soundName">File name</label>
+        <input id="soundName" class="text" type="text" maxlength="40" value="sound" spellcheck="false" autocapitalize="off">
+        <p class="slider-hint">Files are named like <span class="mono" id="namePreview">sound_01.ogg</span>.</p>
       </div>
       <div class="slider">
         <label for="varCount">How many</label>
-        <select id="varCount"><option>4</option><option selected>8</option><option>12</option></select>
+        <select id="varCount"><option>4</option><option>6</option><option selected>8</option><option>12</option></select>
       </div>
     </div>
+    <div class="sliders" id="spread"></div>
     <label class="toggle"><input id="evenLoud" type="checkbox" checked> Even out loudness, so no variation jumps out</label>
     <div class="row">
-      <button id="genBtn" class="primary" type="button">Generate variations</button>
+      <button id="genBtn" class="primary" type="button">Make variations</button>
       <button id="replaceBtn" type="button" hidden>Replace discarded</button>
     </div>
+    <p class="note warn" id="staleNote" hidden>You've changed the sound since these were made. Make variations again to update them.</p>
     <div class="vars" id="vars"><p class="empty">Variations appear here. Tap one to hear it.</p></div>
     <hr class="divider">
     <div class="sliders">
@@ -131,7 +153,7 @@
 
   <footer>
     <p>Your work is saved in this browser as you go. Your recordings never leave this device.</p>
-    <p>Every sound is mono and trimmed, and peaks at −1 dBFS. Each pack includes a recipe.json that reproduces it.</p>
+    <p>Every sound is mono and trimmed, and peaks at −1 dBFS. Each pack includes a sound.json that lists exactly how it was made.</p>
     <button id="startOver" type="button">Start over</button>
   </footer>
 </div>

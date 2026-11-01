@@ -1,5 +1,6 @@
 import type { Recipe } from "../recipes/types";
 import { $ } from "./dom";
+import { commit } from "./history";
 import { state } from "./state";
 import { scheduleRender } from "./variations";
 
@@ -24,6 +25,7 @@ export function buildSliders(r: Recipe): void {
       out.textContent = input.value;
       scheduleRender(true);
     };
+    input.addEventListener("change", commit);
     box.appendChild(el);
   }
 }

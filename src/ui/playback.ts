@@ -27,6 +27,15 @@ export function play(buf: AudioBuffer | null, onEnd?: () => void): void {
   current = n;
 }
 
+/** Plays buffers one after another with a short gap, e.g. source then result. */
+export function playSequence(bufs: (AudioBuffer | null)[], gapMs = 250): void {
+  const list = bufs.filter((b): b is AudioBuffer => !!b);
+  const next = (i: number) => {
+    if (i < list.length) play(list[i], () => setTimeout(() => next(i + 1), gapMs));
+  };
+  next(0);
+}
+
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | Float32Array | null): void {

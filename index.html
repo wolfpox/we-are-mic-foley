@@ -65,6 +65,7 @@
     <div class="row">
       <button id="playOut" class="primary" type="button">▶ Play result</button>
       <button id="playSrc" type="button">Play source</button>
+      <button id="compareBtn" type="button">Compare</button>
       <label class="toggle"><input id="autoplay" type="checkbox" checked> Play on every change</label>
     </div>
   </section>
@@ -121,6 +122,11 @@
     <p class="note" id="exportNote" hidden></p>
   </section>
 
+
+  <div class="undo-bar" id="undoBar" hidden>
+    <button id="undoBtn" type="button" aria-keyshortcuts="Control+Z">↶ Undo</button>
+    <button id="redoBtn" type="button" aria-keyshortcuts="Control+Shift+Z">↷ Redo</button>
+  </div>
 
   <footer>Every sound is mono, trimmed and peak-normalized to −1 dBFS. Each pack includes a recipe.json that reproduces it. Your recordings never leave this device.</footer>
 </div>

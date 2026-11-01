@@ -1,5 +1,6 @@
 import { RECIPES, byId } from "../recipes";
 import { $ } from "./dom";
+import { commit } from "./history";
 import { buildSliders } from "./sliders";
 import { state } from "./state";
 import { clearVars, scheduleRender } from "./variations";
@@ -18,7 +19,10 @@ export function buildRecipes(): void {
     file.className = "rfile";
     file.textContent = r.file + "_01";
     b.append(name, file);
-    b.onclick = () => selectRecipe(r.id, true);
+    b.onclick = () => {
+      selectRecipe(r.id, true);
+      commit();
+    };
     box.appendChild(b);
   }
 }

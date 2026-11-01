@@ -1,6 +1,7 @@
 import { MAX_RAW_SECONDS, autoTrim, sliceSource, toMono, type Mono, type Range } from "../dsp/prep";
 import { EXAMPLES, makeExample } from "../recipes/examples";
 import { $, showNote } from "./dom";
+import { commit } from "./history";
 import { audio, drawWave, ms, play } from "./playback";
 import { state } from "./state";
 import { initTrim, setTrimView } from "./trim";
@@ -45,25 +46,38 @@ function applySource(): boolean {
   return true;
 }
 
+const gateLabel = (v: number) => {
+  $("gateOut").textContent = v === 0 ? "Off" : String(v);
+};
+
+/** Sets the noise cleanup amount and its slider without re-processing (used by undo and restore). */
+export function setGate(amount: number): void {
+  state.gate = amount;
+  const v = Math.round(amount * 100);
+  $<HTMLInputElement>("gateAmt").value = String(v);
+  gateLabel(v);
+}
+
 const selectedMs = (r: Range) => (state.raw ? Math.round(((r.end - r.start) / state.raw.sampleRate) * 1000) + " ms" : "");
 
 export function initSource(): void {
   initTrim((r, done) => {
     state.trim = r;
     $("srcDur").textContent = selectedMs(r);
-    if (done && applySource()) play(state.src);
+    if (done && applySource()) {
+      play(state.src);
+      commit();
+    }
   });
 
   const gate = $<HTMLInputElement>("gateAmt");
-  const label = () => {
-    $("gateOut").textContent = gate.value === "0" ? "Off" : gate.value;
-  };
-  gate.addEventListener("input", label);
+  gate.addEventListener("input", () => gateLabel(Number(gate.value)));
   // Apply on release: cleanup re-processes the whole selection
   gate.addEventListener("change", () => {
     state.gate = Number(gate.value) / 100;
-    label();
+    gateLabel(Number(gate.value));
     if (applySource()) play(state.src);
+    commit();
   });
 
   $("srcWave").addEventListener("click", () => play(state.src));
@@ -81,6 +95,7 @@ export function buildExamples(): void {
     b.onclick = () => {
       setRaw(toMono(makeExample(name)), name);
       play(state.src);
+      commit();
     };
     box.appendChild(b);
   }
@@ -143,6 +158,7 @@ export async function toggleRecord(): Promise<void> {
       const ab = await new Blob(chunks).arrayBuffer();
       setRaw(toMono(await audio().decodeAudioData(ab)), "Recording " + new Date().toLocaleTimeString());
       if (state.src) play(state.src);
+      commit();
     } catch {
       showNote(note(), "Couldn't read that recording. Try again.");
     }
@@ -160,6 +176,7 @@ export async function onFile(e: Event): Promise<void> {
   try {
     const decoded = await audio().decodeAudioData(await f.arrayBuffer());
     setRaw(toMono(decoded), f.name);
+    commit();
     if (decoded.duration > MAX_RAW_SECONDS && state.raw) {
       showNote(note(), `Long file: using the first ${MAX_RAW_SECONDS} seconds.`, true);
     }

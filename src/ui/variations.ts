@@ -1,8 +1,9 @@
 import { render } from "../dsp/render";
 import { byId } from "../recipes";
 import { $ } from "./dom";
+import { scheduleSave } from "./persist";
 import { drawWave, ms, play } from "./playback";
-import { state, type Variation } from "./state";
+import { state, type Variation, type VariationMeta } from "./state";
 
 const EMPTY = '<p class="empty">Variations appear here. Tap one to hear it.</p>';
 
@@ -30,6 +31,7 @@ export function clearVars(): void {
   state.vars = [];
   state.varMeta = null;
   renderTiles();
+  scheduleSave();
 }
 
 const keptCount = () => state.vars.filter((v) => v.kept).length;
@@ -91,6 +93,7 @@ function renderTiles(): Element[] {
       tile.classList.toggle("discarded", !v.kept);
       setX();
       updateControls();
+      scheduleSave();
     };
 
     tile.append(playBtn, x);
@@ -158,7 +161,22 @@ export async function generate(): Promise<void> {
     noiseCleanup: state.gate,
   };
   const tiles = renderTiles();
+  scheduleSave();
   audition(tiles, vars.map((v) => v.buf));
+}
+
+/** Re-renders saved variations from their seeds (after a reload). Plays nothing. */
+export async function restoreVariations(meta: VariationMeta, saved: { seed: number; kept: boolean }[]): Promise<void> {
+  const src = state.src;
+  const r = byId[meta.recipe];
+  if (!src || !r || meta.recipe !== state.recipe || !saved.length) return;
+  const vars: Variation[] = [];
+  for (const [i, v] of saved.entries()) {
+    vars.push({ seed: v.seed, kept: v.kept, name: varName(r.file, i + 1), buf: await render(r, src, meta.params, v.seed, meta.variation) });
+  }
+  state.vars = vars;
+  state.varMeta = meta;
+  renderTiles();
 }
 
 /** Re-rolls only the discarded variations, with the settings the set was made with. */
@@ -175,6 +193,7 @@ export async function replaceDiscarded(): Promise<void> {
     }
   });
   const tiles = renderTiles();
+  scheduleSave();
   audition(slots.map((i) => tiles[i]), slots.map((i) => state.vars[i].buf));
 }
 

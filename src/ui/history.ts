@@ -1,6 +1,7 @@
 import type { Mono, Range } from "../dsp/prep";
 import type { Params } from "../recipes/types";
 import { $ } from "./dom";
+import { scheduleSave } from "./persist";
 import { state } from "./state";
 
 /** Everything that shapes the sound. Variations aren't included; they're re-rolled after any change. */
@@ -73,6 +74,7 @@ export function commit(): void {
   redoStack.length = 0;
   current = s;
   updateButtons();
+  scheduleSave();
 }
 
 /** Starts history over from the current state, e.g. after loading a saved session. */
@@ -95,6 +97,7 @@ function go(from: Snapshot[], to: Snapshot[]): void {
     restoring = false;
   }
   updateButtons();
+  scheduleSave();
 }
 
 export const undo = () => go(undoStack, redoStack);

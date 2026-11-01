@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { describeFormat, encodeSound, type ExportOptions, type Format, type OutputRate, type Quality } from "../dsp/encode";
 import { byId } from "../recipes";
 import { $, showNote } from "./dom";
+import { scheduleSave } from "./persist";
 import { state } from "./state";
 import { varName } from "./variations";
 
@@ -21,6 +22,13 @@ export function readExportOptions(): ExportOptions {
   };
 }
 
+export function setExportOptions(o: ExportOptions): void {
+  $<HTMLSelectElement>("expFormat").value = o.format;
+  $<HTMLSelectElement>("expQuality").value = o.quality;
+  $<HTMLSelectElement>("expRate").value = String(o.sampleRate);
+  $("expFormat").dispatchEvent(new Event("change"));
+}
+
 export function initExportControls(): void {
   const update = () => {
     const o = readExportOptions();
@@ -28,7 +36,12 @@ export function initExportControls(): void {
     // Quality has no effect on WAV
     $<HTMLSelectElement>("expQuality").disabled = o.format === "wav";
   };
-  for (const id of ["expFormat", "expQuality", "expRate"]) $(id).addEventListener("change", update);
+  for (const id of ["expFormat", "expQuality", "expRate"]) {
+    $(id).addEventListener("change", () => {
+      update();
+      scheduleSave();
+    });
+  }
   update();
 }
 

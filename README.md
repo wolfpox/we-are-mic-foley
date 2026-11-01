@@ -6,6 +6,8 @@ A free browser tool that turns sounds you record yourself (mouth noises, desk ta
 
 Everything runs in your browser. Your recordings never leave your device.
 
+**Try it:** https://wolfpox.github.io/we-are-mic-foley/ (works on phones; allow the microphone when asked)
+
 ## Run it
 
 Needs Node 20 or newer. The project pins Node 26 in `.nvmrc`. If Node is installed with nvm but not loaded in your shell, run `source ~/.nvm/nvm.sh && nvm use` first.

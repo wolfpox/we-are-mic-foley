@@ -26,6 +26,7 @@ export interface SavedSession {
   exportOptions: ExportOptions;
   /** Variations are stored as seeds and re-rendered on load. */
   vars: { seed: number; kept: boolean }[];
+  evenLoudness?: boolean;
   varMeta: VariationMeta | null;
 }
 
@@ -82,6 +83,7 @@ function collect(): SavedSession {
     exportOptions: readExport(),
     vars: state.vars.map((v) => ({ seed: v.seed, kept: v.kept })),
     varMeta: state.varMeta,
+    evenLoudness: state.evenLoudness,
   };
 }
 

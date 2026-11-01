@@ -10,7 +10,7 @@ import { drawWave, play, playSequence } from "./ui/playback";
 import { buildRecipes, selectRecipe } from "./ui/recipes";
 import { buildExamples, initSource, onFile, setGate, setRaw, toggleRecord } from "./ui/source";
 import { state } from "./ui/state";
-import { clearVars, generate, redrawVariations, replaceDiscarded, restoreVariations, scheduleRender } from "./ui/variations";
+import { clearVars, generate, setEvenLoudness, redrawVariations, replaceDiscarded, restoreVariations, scheduleRender } from "./ui/variations";
 
 buildExamples();
 buildRecipes();
@@ -28,6 +28,10 @@ $("varAmt").oninput = () => {
 };
 $("varAmt").addEventListener("change", scheduleSave);
 $("varCount").addEventListener("change", scheduleSave);
+$("evenLoud").addEventListener("change", () => {
+  setEvenLoudness($<HTMLInputElement>("evenLoud").checked);
+  scheduleSave();
+});
 $("genBtn").onclick = generate;
 $("replaceBtn").onclick = replaceDiscarded;
 $("exportBtn").onclick = exportPack;
@@ -51,6 +55,7 @@ async function restore(s: SavedSession): Promise<void> {
   $("varAmtOut").textContent = String(s.varAmt);
   $<HTMLSelectElement>("varCount").value = String(s.varCount);
   setExportOptions(s.exportOptions);
+  setEvenLoudness(s.evenLoudness ?? true);
   if (s.varMeta) await restoreVariations(s.varMeta, s.vars);
 }
 

@@ -1,3 +1,4 @@
+import { matchLoudnessGains } from "../dsp/loudness";
 import { render } from "../dsp/render";
 import { byId } from "../recipes";
 import { $ } from "./dom";
@@ -32,6 +33,39 @@ export function clearVars(): void {
   state.varMeta = null;
   renderTiles();
   scheduleSave();
+}
+
+const variation = (seed: number, name: string, kept: boolean, rendered: AudioBuffer): Variation => ({ seed, name, kept, rendered, buf: rendered, gain: 1 });
+
+function scaled(b: AudioBuffer, gain: number): AudioBuffer {
+  if (gain === 1) return b;
+  const out = new AudioBuffer({ length: b.length, sampleRate: b.sampleRate, numberOfChannels: 1 });
+  const d = b.getChannelData(0);
+  const o = out.getChannelData(0);
+  for (let i = 0; i < d.length; i++) o[i] = d[i] * gain;
+  return out;
+}
+
+/** Applies "Even out loudness": kept variations are matched to the quietest one. Discarded ones are left as rendered. */
+function levelPack(): void {
+  const kept = state.vars.filter((v) => v.kept);
+  const gains = state.evenLoudness ? matchLoudnessGains(kept.map((v) => v.rendered.getChannelData(0)), kept[0]?.rendered.sampleRate ?? 44100) : [];
+  for (const v of state.vars) {
+    const k = kept.indexOf(v);
+    const g = k >= 0 && state.evenLoudness ? gains[k] : 1;
+    if (g !== v.gain) {
+      v.gain = g;
+      v.buf = scaled(v.rendered, g);
+    }
+  }
+}
+
+/** Turns loudness matching on or off and updates the variations. */
+export function setEvenLoudness(on: boolean): void {
+  state.evenLoudness = on;
+  $<HTMLInputElement>("evenLoud").checked = on;
+  levelPack();
+  redrawVariations();
 }
 
 const keptCount = () => state.vars.filter((v) => v.kept).length;
@@ -92,6 +126,8 @@ function renderTiles(): Element[] {
       state.vars[i].kept = !state.vars[i].kept;
       tile.classList.toggle("discarded", !v.kept);
       setX();
+      levelPack();
+      redrawVariations();
       updateControls();
       scheduleSave();
     };
@@ -146,12 +182,13 @@ export async function generate(): Promise<void> {
     const out: Variation[] = [];
     for (let i = 0; i < n; i++) {
       const seed = newSeed();
-      out.push({ seed, name: varName(r.file, i + 1), kept: true, buf: await render(r, src, params, seed, amt) });
+      out.push(variation(seed, varName(r.file, i + 1), true, await render(r, src, params, seed, amt)));
     }
     return out;
   });
   state.vars = vars;
   const trimMs = (n: number) => (state.raw ? Math.round((n / state.raw.sampleRate) * 1000) : 0);
+  levelPack();
   state.varMeta = {
     recipe: r.id,
     params,
@@ -172,10 +209,11 @@ export async function restoreVariations(meta: VariationMeta, saved: { seed: numb
   if (!src || !r || meta.recipe !== state.recipe || !saved.length) return;
   const vars: Variation[] = [];
   for (const [i, v] of saved.entries()) {
-    vars.push({ seed: v.seed, kept: v.kept, name: varName(r.file, i + 1), buf: await render(r, src, meta.params, v.seed, meta.variation) });
+    vars.push(variation(v.seed, varName(r.file, i + 1), v.kept, await render(r, src, meta.params, v.seed, meta.variation)));
   }
   state.vars = vars;
   state.varMeta = meta;
+  levelPack();
   renderTiles();
 }
 
@@ -189,9 +227,10 @@ export async function replaceDiscarded(): Promise<void> {
   await busy($<HTMLButtonElement>("replaceBtn"), "Rendering…", async () => {
     for (const i of slots) {
       const seed = newSeed();
-      state.vars[i] = { seed, name: state.vars[i].name, kept: true, buf: await render(r, src, m.params, seed, m.variation) };
+      state.vars[i] = variation(seed, state.vars[i].name, true, await render(r, src, m.params, seed, m.variation));
     }
   });
+  levelPack();
   const tiles = renderTiles();
   scheduleSave();
   audition(slots.map((i) => tiles[i]), slots.map((i) => state.vars[i].buf));

@@ -78,7 +78,7 @@ export async function exportPack(): Promise<void> {
       const data = await encodeSound(v.buf, opts);
       zip.file(name, data);
       total += data.length;
-      files.push({ name, seed: v.seed, ms: Math.round(v.buf.duration * 1000), bytes: data.length });
+      files.push({ name, seed: v.seed, ms: Math.round(v.buf.duration * 1000), gainDb: Math.round(20 * Math.log10(v.gain) * 100) / 100, bytes: data.length });
     }
     const recipe = {
       tool: TOOL,
@@ -88,8 +88,9 @@ export async function exportPack(): Promise<void> {
       noiseCleanup: m.noiseCleanup,
       params: m.params,
       variation: m.variation,
+      loudness: state.evenLoudness ? "even (matched max momentary loudness, BS.1770)" : "peak",
       export: opts,
-      format: describeFormat(opts),
+      format: describeFormat(opts, state.evenLoudness),
       files,
     };
     zip.file("recipe.json", JSON.stringify(recipe, null, 2));

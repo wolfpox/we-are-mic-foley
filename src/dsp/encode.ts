@@ -72,8 +72,8 @@ export async function encodeSound(buf: AudioBuffer, opts: ExportOptions): Promis
   return concat(parts);
 }
 
-export function describeFormat(o: ExportOptions): string {
+export function describeFormat(o: ExportOptions, evenLoudness = false): string {
   const rate = o.sampleRate === 44100 ? "44.1 kHz" : "22.05 kHz";
   const q = o.format === "wav" ? "" : `, ${o.quality} quality`;
-  return `${FORMAT_LABEL[o.format]} ${rate} mono${q}, peak -1 dBFS`;
+  return `${FORMAT_LABEL[o.format]} ${rate} mono${q}, ${evenLoudness ? "loudness-matched, peaks at most" : "peak"} -1 dBFS`;
 }

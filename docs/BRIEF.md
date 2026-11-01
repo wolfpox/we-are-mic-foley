@@ -15,11 +15,13 @@ Solo and small indie game developers with no audio budget and no audio-engineeri
 - **No backend.** Static site. Audio never leaves the device.
 
 ## Core loop
-1. Pick a target sound (a recipe). The recipe tells you what to record.
-2. Record or upload a source. It is trimmed, converted to mono and normalized automatically.
+1. Pick the sound you need (a recipe). The recipe tells you what to record.
+2. Record or upload a source. The useful part is selected automatically; handles adjust it, and a slider cleans up background noise. Built-in examples work without a mic.
 3. Shape it with 3 to 5 sliders named in plain words (Weight, Surface, Space).
-4. Generate 4 to 12 variations so repeated sounds don't feel robotic.
-5. Export a zip of sounds plus a `recipe.json` with the settings and seeds that reproduce the pack.
+4. Generate 4 to 12 variations so repeated sounds don't feel robotic. Discard the ones you don't like and replace them. Loudness is matched across the set.
+5. Export a zip (Ogg Vorbis, MP3 or WAV; 44.1 or 22 kHz) plus a `recipe.json` with the settings and seeds that reproduce the pack.
+
+Undo/redo covers every sound change, and the session is saved in the browser as you go.
 
 ## First recipes (from the prototype)
 - **Footstep, hard** (wood to stone): pitch down with weight, high-pass, presence boost at 1.5 to 3.8 kHz, short envelope, synthesized low thump layer, small room reverb.
@@ -55,7 +57,7 @@ tests/       wav.test.ts  determinism.test.ts  golden.test.ts  golden/
 ```
 
 ## Roadmap
-Done: Phase 0 and Phase 1 (2026-10-31).
+Done: Phase 0 and Phase 1 (2026-10-31), Phase 2 (2026-11-01). Live at https://wolfpox.github.io/we-are-mic-foley/.
 
 0. **Setup.** Node LTS, git, Vite + TypeScript, Vitest browser tests in Playwright Firefox. The prototype runs as-is from `src/legacy/app.js`.
 1. **Port, no change in sound.** Split into the layout above. Save reference renders of each recipe from the prototype with fixed seeds and test against them. Test the WAV encoder. Remove the 4-second recording cap.

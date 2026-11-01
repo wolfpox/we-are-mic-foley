@@ -1,6 +1,9 @@
 import { RECIPES, byId } from "../recipes";
 import { $ } from "./dom";
+import { toMono } from "../dsp/prep";
+import { EXAMPLES, makeExample, type ExampleName } from "../recipes/examples";
 import { commit } from "./history";
+import { setRaw } from "./source";
 import { buildSliders } from "./sliders";
 import { state } from "./state";
 import { clearVars, scheduleRender } from "./variations";
@@ -21,6 +24,10 @@ export function buildRecipes(): void {
     b.append(name, file);
     b.onclick = () => {
       selectRecipe(r.id, true);
+      // While still on a built-in example, switch to the one that suits this sound
+      if ((EXAMPLES as readonly string[]).includes(state.srcName) && state.srcName !== r.example) {
+        setRaw(toMono(makeExample(r.example as ExampleName)), r.example);
+      }
       commit();
     };
     box.appendChild(b);
@@ -35,11 +42,7 @@ export function selectRecipe(id: string, user: boolean): void {
 
   const tip = $("tip");
   tip.innerHTML = "<b>What to record:</b> ";
-  tip.append(r.tip + " ");
-  const hint = document.createElement("span");
-  hint.className = "hint";
-  hint.textContent = `Example to try: ${r.example}.`;
-  tip.append(hint);
+  tip.append(r.tip);
 
   buildSliders(r);
   clearVars();

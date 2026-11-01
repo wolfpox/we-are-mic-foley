@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import { describeFormat, encodeSound, type ExportOptions, type Format, type OutputRate, type Quality } from "../dsp/encode";
 import { byId } from "../recipes";
 import { $, showNote } from "./dom";
@@ -68,6 +67,7 @@ export async function exportPack(): Promise<void> {
   const label = btn.textContent;
   btn.textContent = "Encoding…";
   try {
+    const { default: JSZip } = await import("jszip"); // loaded on first export only
     const zip = new JSZip();
     const files = [];
     let total = 0;

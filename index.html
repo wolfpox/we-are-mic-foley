@@ -15,17 +15,23 @@
     <span class="tag">DIY game sound effects · v0.2</span>
     <h1 class="brand">We Are Mic <span>Foley</span></h1>
     <p class="tagline">Sounds Like A Good Idea</p>
-    <p class="lede">Record a sound with your mouth, your desk or a towel. Pick what it should become. Shape it with a few sliders, make variations, and export a game-ready pack.</p>
+    <p class="lede">Pick the sound your game needs. Record something close with your mouth, your desk or a towel. Shape it with a few sliders, make variations, and export a game-ready pack.</p>
   </header>
 
   <section class="step" aria-labelledby="s1">
-    <div class="step-head"><span class="step-num">01</span><h2 id="s1">Source sound</h2></div>
+    <div class="step-head"><span class="step-num">01</span><h2 id="s1">What sound do you need?</h2></div>
+    <div class="recipes" id="recipes"></div>
+  </section>
+
+  <section class="step" aria-labelledby="s2">
+    <div class="step-head"><span class="step-num">02</span><h2 id="s2">Record it</h2></div>
+    <p class="tip" id="tip"></p>
     <div class="row">
       <button id="recBtn" class="rec" type="button"><span class="dot"></span><span id="recLabel">Record</span></button>
       <span class="meter" id="recMeter" hidden aria-hidden="true"><span id="recLevel"></span></span>
       <label class="filebtn">Upload audio<input id="fileIn" type="file" accept="audio/*"></label>
-      <span class="hint">or try an example:</span>
     </div>
+    <p class="hint">No mic handy? Start from an example:</p>
     <div class="row" id="examples"></div>
     <p class="note" id="srcNote" hidden></p>
     <div class="wavebox">
@@ -46,12 +52,6 @@
         <div class="ends"><span>Off</span><span>Strong</span></div>
       </div>
     </div>
-  </section>
-
-  <section class="step" aria-labelledby="s2">
-    <div class="step-head"><span class="step-num">02</span><h2 id="s2">Target sound</h2></div>
-    <div class="recipes" id="recipes"></div>
-    <p class="tip" id="tip"></p>
   </section>
 
   <section class="step" aria-labelledby="s3">

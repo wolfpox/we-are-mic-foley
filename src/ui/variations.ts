@@ -148,7 +148,15 @@ export async function generate(): Promise<void> {
     return out;
   });
   state.vars = vars;
-  state.varMeta = { recipe: r.id, params, variation: amt, source: state.srcName };
+  const trimMs = (n: number) => (state.raw ? Math.round((n / state.raw.sampleRate) * 1000) : 0);
+  state.varMeta = {
+    recipe: r.id,
+    params,
+    variation: amt,
+    source: state.srcName,
+    sourceTrimMs: [trimMs(state.trim?.start ?? 0), trimMs(state.trim?.end ?? 0)],
+    noiseCleanup: state.gate,
+  };
   const tiles = renderTiles();
   audition(tiles, vars.map((v) => v.buf));
 }

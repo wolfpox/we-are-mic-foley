@@ -22,6 +22,7 @@
     <div class="step-head"><span class="step-num">01</span><h2 id="s1">Source sound</h2></div>
     <div class="row">
       <button id="recBtn" class="rec" type="button"><span class="dot"></span><span id="recLabel">Record</span></button>
+      <span class="meter" id="recMeter" hidden aria-hidden="true"><span id="recLevel"></span></span>
       <label class="filebtn">Upload audio<input id="fileIn" type="file" accept="audio/*"></label>
       <span class="hint">or try an example:</span>
     </div>
@@ -29,7 +30,21 @@
     <p class="note" id="srcNote" hidden></p>
     <div class="wavebox">
       <div class="wavebar"><span id="srcName">No source</span><span id="srcDur"></span></div>
-      <canvas class="wave" id="srcWave" aria-label="Source waveform. Click to play."></canvas>
+      <div class="trim">
+        <canvas class="wave" id="srcWave" aria-label="Source waveform. Tap to hear the selected part."></canvas>
+        <div class="trim-shade" id="shadeL"></div>
+        <div class="trim-shade" id="shadeR"></div>
+        <div class="trim-handle" id="trimStart" role="slider" tabindex="0" aria-label="Start of the part to use"></div>
+        <div class="trim-handle" id="trimEnd" role="slider" tabindex="0" aria-label="End of the part to use"></div>
+      </div>
+      <p class="hint">Drag the handles to pick the part to use. Tap the waveform to hear it.</p>
+    </div>
+    <div class="sliders">
+      <div class="slider">
+        <label for="gateAmt">Clean up background noise <output id="gateOut">Off</output></label>
+        <input id="gateAmt" type="range" min="0" max="100" value="0">
+        <div class="ends"><span>Off</span><span>Strong</span></div>
+      </div>
     </div>
   </section>
 

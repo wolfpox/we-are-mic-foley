@@ -29,7 +29,7 @@ export function play(buf: AudioBuffer | null, onEnd?: () => void): void {
 
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | null): void {
+export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | Float32Array | null): void {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -42,7 +42,7 @@ export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | null): vo
   g.fillStyle = cssVar("--wave-dim");
   g.fillRect(0, h / 2 - 0.5, w, 1);
   if (!buf) return;
-  const d = buf.getChannelData(0);
+  const d = buf instanceof Float32Array ? buf : buf.getChannelData(0);
   const step = d.length / w;
   g.fillStyle = cssVar("--wave");
   for (let x = 0; x < w; x++) {

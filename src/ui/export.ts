@@ -67,7 +67,18 @@ export async function exportPack(): Promise<void> {
       total += data.length;
       files.push({ name, seed: v.seed, ms: Math.round(v.buf.duration * 1000), bytes: data.length });
     }
-    const recipe = { tool: TOOL, recipe: m.recipe, source: m.source, params: m.params, variation: m.variation, export: opts, format: describeFormat(opts), files };
+    const recipe = {
+      tool: TOOL,
+      recipe: m.recipe,
+      source: m.source,
+      sourceTrimMs: m.sourceTrimMs,
+      noiseCleanup: m.noiseCleanup,
+      params: m.params,
+      variation: m.variation,
+      export: opts,
+      format: describeFormat(opts),
+      files,
+    };
     zip.file("recipe.json", JSON.stringify(recipe, null, 2));
     download(await zip.generateAsync({ type: "blob" }), `${byId[m.recipe].file}_pack.zip`);
     showNote(note, `Saved ${kept.length} sounds, ${kb(total)} in total.`, true);

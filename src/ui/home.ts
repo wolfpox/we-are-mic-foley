@@ -1,41 +1,18 @@
-import { $ } from "./dom";
-import { commit } from "./history";
-import { audio, drawWave } from "./playback";
-import { dayText, keptCount, seconds, state, timeText, type Clip } from "./state";
-import { toast } from "./toast";
+import { $, el } from "./dom";
+import { drawWave, play, stop } from "./playback";
+import { panel, resetPanel } from "./panel";
+import { dayText, displayName, seconds, state, timeText, type Clip } from "./state";
 
-// Home: your recordings, newest first. Tap a waveform to play it; tap the rest of the row to tag it,
-// add it to projects or make it into a sound effect.
-
-const SUGGEST_TAGS = ["footsteps", "hit", "whoosh", "click", "door", "voice", "metal", "wood", "cloth", "water", "keys"];
-
-/** Set by main.ts, so this module doesn't need to import the sound screen. */
-let openSoundFn: (id: string) => void = () => {};
-export const setOpenSound = (fn: (id: string) => void) => (openSoundFn = fn);
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-};
+// Home: your recordings, newest first. Tap a row's waveform to play it; tap the rest of the row to
+// open it into the sound panel, where it's made into a sound effect.
 
 const plural = (n: number, w: string) => `×${n} ${w}${n === 1 ? "" : "s"}`;
 const projectsInUse = () => [...new Set([...state.lib.projects, ...state.lib.clips.flatMap((c) => c.projects)])];
+const made = (c: Clip) => state.lib.designs[c.id]?.vars.length ?? 0;
 
-// ---- Playback with a moving playhead ----
+// ---- Playing a whole recording, with a moving playhead ----
 
-let playing: { src: AudioBufferSourceNode; id: string } | null = null;
-
-function stopPlaying(): void {
-  if (playing) {
-    try {
-      playing.src.stop();
-    } catch {
-      // already stopped
-    }
-  }
-  playing = null;
+function resetHeads(): void {
   document.querySelectorAll(".wavebtn.playing").forEach((w) => {
     w.classList.remove("playing");
     const h = w.querySelector<HTMLElement>(".head")!;
@@ -44,51 +21,33 @@ function stopPlaying(): void {
   });
 }
 
+let playingId = "";
+
 /** Plays a whole recording, at a comfortable level. Tapping the one that's playing stops it. */
 export function playClip(c: Clip): void {
-  const again = playing?.id === c.id;
-  stopPlaying();
-  if (again) return;
-  const ctx = audio();
+  if (playingId === c.id) return stop();
   const { data, sampleRate } = c.raw;
   const peak = data.reduce((m, x) => Math.max(m, Math.abs(x)), 0) || 1;
-  const buf = ctx.createBuffer(1, data.length, sampleRate);
+  const buf = new AudioBuffer({ length: data.length, sampleRate, numberOfChannels: 1 });
   buf.getChannelData(0).set(data.map((x) => (x * 0.9) / peak));
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  src.connect(ctx.destination);
-  src.start();
-  playing = { src, id: c.id };
+  play(buf, () => {
+    playingId = "";
+    resetHeads();
+  });
+  playingId = c.id;
   const w = document.querySelector<HTMLElement>(`.wavebtn[data-id="${c.id}"]`);
-  if (w) {
-    const h = w.querySelector<HTMLElement>(".head")!;
-    w.classList.add("playing");
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        h.style.transition = `left ${buf.duration}s linear`;
-        h.style.left = "calc(100% - 2px)";
-      }),
-    );
-  }
-  src.onended = () => {
-    if (playing?.src === src) stopPlaying();
-  };
+  if (!w) return;
+  const h = w.querySelector<HTMLElement>(".head")!;
+  w.classList.add("playing");
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      h.style.transition = `left ${buf.duration}s linear`;
+      h.style.left = "calc(100% - 2px)";
+    }),
+  );
 }
 
 // ---- The list ----
-
-/** Recordings drawn at full height, however quietly they were recorded. */
-const norms = new WeakMap<Float32Array, Float32Array>();
-function normalized(c: Clip): Float32Array {
-  const d = c.raw.data;
-  let n = norms.get(d);
-  if (!n) {
-    const peak = d.reduce((m, x) => Math.max(m, Math.abs(x)), 0) || 1;
-    n = d.map((x) => x / peak);
-    norms.set(d, n);
-  }
-  return n;
-}
 
 function renderTagbar(): void {
   const box = $("tagbar");
@@ -116,19 +75,29 @@ function renderTagbar(): void {
 
 const shown = (c: Clip) => {
   const f = state.filter;
-  if (f === "all") return true;
+  if (c.id === state.openId || f === "all") return true;
   if (f === "untagged") return !c.tags.length;
   if (f.startsWith("p:")) return c.projects.includes(f.slice(2));
   return c.tags.includes(f);
 };
 
+/** Updates the dock for what's open: the big button records a new take into an open sound. */
+function updateDock(): void {
+  const c = state.lib.clips.find((x) => x.id === state.openId);
+  document.body.classList.toggle("sound-open", !!c);
+  if (!$("rec").classList.contains("on")) $("recHint").textContent = c ? `New take · ${displayName(c)}` : "Record anything";
+  $("rec").setAttribute("aria-label", c ? `Record a new take of ${displayName(c)}` : "Record");
+}
+
 export function renderLibrary(): void {
   const clips = state.lib.clips;
+  if (state.openId && !clips.some((c) => c.id === state.openId)) state.openId = "";
   if (state.filter !== "all" && !clips.some(shown)) state.filter = "all";
   renderTagbar();
   $("libCount").textContent = `${clips.length} recording${clips.length === 1 ? "" : "s"}`;
   const box = $("lib");
   box.innerHTML = "";
+  updateDock();
   if (!clips.length) {
     box.appendChild(el("p", "empty", "Tap the red button and record anything."));
     return;
@@ -143,127 +112,69 @@ export function renderLibrary(): void {
       list = el("div", "list");
       box.appendChild(list);
     }
-    list!.appendChild(entry(c));
+    list!.appendChild(c.id === state.openId ? openEntry(c) : entry(c));
   }
 }
 
 let freshId = "";
 export const markFresh = (id: string) => (freshId = id);
 
-/** One row: [waveform, tap to play] [time / length] [tags] | [projects / variations] */
+/** Opens a recording into the panel (or closes it if it's open) and brings it into view. */
+export function openSound(id: string, edit = false): void {
+  stop();
+  if (state.openId === id && !edit) state.openId = "";
+  else {
+    state.openId = id;
+    state.selTake = 0;
+    resetPanel(edit);
+  }
+  renderLibrary();
+  document.querySelector(".entry.open")?.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function openEntry(c: Clip): HTMLElement {
+  const card = el("div", "entry open" + (c.id === freshId ? " fresh" : ""));
+  if (c.id === freshId) freshId = "";
+  card.appendChild(panel(c));
+  return card;
+}
+
+/** One row: [waveform, tap to play] [time / length] [name and tags] | [projects / variations] */
 function entry(c: Clip): HTMLElement {
-  const made = keptCount(state.lib.designs[c.id]);
-  const open = state.openId === c.id;
-  const card = el("div", "entry" + (c.id === freshId ? " fresh" : "") + (open ? " open" : ""));
+  const n = made(c);
+  const card = el("div", "entry" + (c.id === freshId ? " fresh" : ""));
   if (c.id === freshId) freshId = "";
 
   const hit = el("button", "hit");
   hit.type = "button";
-  hit.setAttribute("aria-expanded", String(open));
-  hit.setAttribute("aria-label", `Recording from ${timeText(c.at)}. Tags, projects and variations`);
-  hit.onclick = () => {
-    state.openId = open ? "" : c.id;
-    renderLibrary();
-  };
+  hit.setAttribute("aria-label", `Open ${displayName(c)}, recorded ${timeText(c.at)}`);
+  hit.onclick = () => openSound(c.id);
 
   const row = el("div", "row");
-  const w = el("button", "wavebtn" + (made ? "" : " raw"));
+  const w = el("button", "wavebtn" + (n ? "" : " raw"));
   w.type = "button";
   w.dataset.id = c.id;
-  w.setAttribute("aria-label", "Play");
+  w.setAttribute("aria-label", "Play " + displayName(c));
   const canvas = el("canvas");
   w.append(canvas, el("span", "head"));
   w.onclick = () => playClip(c);
 
   const when = el("div", "when");
-  when.append(el("b", undefined, timeText(c.at)), seconds(c));
+  when.append(el("b", null, timeText(c.at)), seconds(c));
 
   const tags = el("div", "tags");
-  if (!c.tags.length) tags.appendChild(el("span", "untagged", "no tags"));
-  c.tags.slice(0, 2).forEach((t, k) => tags.appendChild(el("span", "tag", k === 1 && c.tags.length > 2 ? `${t} +${c.tags.length - 2}` : t)));
+  // Your own tags before "example"
+  const labels = [...(c.name.trim() ? [c.name.trim()] : []), ...c.tags.filter((t) => t !== "example"), ...c.tags.filter((t) => t === "example")];
+  if (!labels.length) tags.appendChild(el("span", "untagged", "no tags"));
+  labels.slice(0, 2).forEach((t, k) => tags.appendChild(el("span", "tag" + (k === 0 && c.name.trim() ? " named" : ""), k === 1 && labels.length > 2 ? `${t} +${labels.length - 2}` : t)));
 
   const counts = el("div", "counts");
-  counts.append(el("span", "count" + (c.projects.length ? "" : " zero"), plural(c.projects.length, "project")), el("span", "count" + (made ? "" : " zero"), plural(made, "variation")));
+  counts.append(el("span", "count" + (c.projects.length ? "" : " none"), plural(c.projects.length, "project")), el("span", "count" + (n ? "" : " none"), plural(n, "variation")));
 
   row.append(w, when, tags, counts);
   card.append(hit, row);
-  if (open) card.appendChild(details(c));
-  requestAnimationFrame(() => drawWave(canvas, normalized(c), [], made ? "--wave" : "--raw"));
+  requestAnimationFrame(() => drawWave(canvas, c.raw.data, n ? "--wave" : "--raw"));
   return card;
-}
-
-function chipRow(all: string[], on: string[], cls: string, toggle: (v: string) => void, placeholder: string, add: (v: string) => void): HTMLElement {
-  const box = el("div", "chips");
-  for (const v of all) {
-    const b = el("button", `chip ${cls}${on.includes(v) ? " on" : ""}`, v);
-    b.type = "button";
-    b.setAttribute("aria-pressed", String(on.includes(v)));
-    b.onclick = () => toggle(v);
-    box.appendChild(b);
-  }
-  const inp = el("input", "newtag");
-  inp.type = "text";
-  inp.placeholder = placeholder;
-  inp.maxLength = 24;
-  inp.setAttribute("aria-label", placeholder);
-  inp.onkeydown = (e) => {
-    if (e.key === "Enter" && inp.value.trim()) add(inp.value.trim());
-  };
-  box.appendChild(inp);
-  return box;
-}
-
-/** Tags, projects and actions for an opened row. */
-function details(c: Clip): HTMLElement {
-  const box = el("div", "details");
-  const changed = () => {
-    renderLibrary();
-    commit();
-  };
-  const toggle = (list: string[], v: string) => {
-    const i = list.indexOf(v);
-    if (i >= 0) list.splice(i, 1);
-    else list.push(v);
-    changed();
-  };
-  const addTo = (list: string[], v: string) => {
-    if (!list.includes(v)) list.push(v);
-    changed();
-  };
-  box.append(
-    el("div", "label", "Tags"),
-    chipRow([...new Set([...c.tags, ...SUGGEST_TAGS])], c.tags, "", (t) => toggle(c.tags, t), "+ tag", (v) => addTo(c.tags, v.toLowerCase())),
-    el("div", "label", "Projects"),
-    chipRow(projectsInUse(), c.projects, "proj", (p) => toggle(c.projects, p), "+ project", (v) => {
-      if (!state.lib.projects.includes(v)) state.lib.projects.push(v);
-      addTo(c.projects, v);
-    }),
-  );
-  const acts = el("div", "acts");
-  const made = keptCount(state.lib.designs[c.id]);
-  const go = el("button", "go", made ? "Open sound effect ›" : "Make variations ›");
-  go.type = "button";
-  go.onclick = () => openSoundFn(c.id);
-  const del = el("button", "del", "Delete");
-  del.type = "button";
-  del.onclick = () => {
-    stopPlaying();
-    state.lib.clips = state.lib.clips.filter((x) => x !== c);
-    delete state.lib.designs[c.id];
-    // Other sound effects stop using it as a layer
-    for (const [id, d] of Object.entries(state.lib.designs)) {
-      d.layers = d.layers.filter((l) => l.clip !== c.id);
-      if (!d.layers.length) delete state.lib.designs[id];
-    }
-    state.openId = "";
-    renderLibrary();
-    renderDoors();
-    commit();
-    toast("Deleted", { label: "Undo", run: () => document.getElementById("undoBtn")?.click() });
-  };
-  acts.append(go, del);
-  box.appendChild(acts);
-  return box;
 }
 
 export function renderDoors(): void {
@@ -277,5 +188,3 @@ export function renderHome(): void {
   renderDoors();
   renderLibrary();
 }
-
-export { stopPlaying };

@@ -48,109 +48,39 @@
     </div>
   </main>
 
-  <!-- SOUND: one recording made into a sound effect -->
-  <main class="screen" id="sound" hidden>
-    <div class="top"><button class="back" data-home type="button">‹ Back</button><span class="top-note" id="soundTitle"></span></div>
-
-    <section class="block" aria-labelledby="takesTitle">
-      <div class="block-head"><h2 id="takesTitle">Takes</h2><span class="mono" id="srcDur"></span></div>
-      <div class="trim">
-        <canvas class="wave" id="srcWave" aria-label="Recording. Tap to hear the selected take."></canvas>
-        <div class="trim-shade" id="shadeL"></div>
-        <div class="trim-shade" id="shadeR"></div>
-        <div class="trim-handle" id="trimStart" role="slider" tabindex="0" aria-label="Start of the take"></div>
-        <div class="trim-handle" id="trimEnd" role="slider" tabindex="0" aria-label="End of the take"></div>
-      </div>
-      <div class="chips" id="takes"></div>
-      <div class="row">
-        <button class="small" id="addTake" type="button">+ Take</button>
-        <button class="small" id="delTake" type="button">Remove take</button>
-      </div>
-      <div class="slider">
-        <label for="gateAmt">Clean up noise <output id="gateOut">Off</output></label>
-        <input id="gateAmt" type="range" min="0" max="100" value="0">
-      </div>
-    </section>
-
-    <section class="block" aria-labelledby="shapeTitle">
-      <div class="block-head"><h2 id="shapeTitle">Shape</h2></div>
-      <div class="chips" id="starts" aria-label="Starting points"></div>
-      <div class="layers" id="layers"></div>
-      <button class="small" id="addLayer" type="button">+ Layer</button>
-      <div class="sliders" id="fx"></div>
-      <div class="result">
-        <canvas class="wave" id="outWave" aria-label="Result. Tap to play."></canvas>
-        <div class="row">
-          <button class="primary" id="playOut" type="button">▶ Play</button>
-          <button id="compareBtn" type="button">Before / after</button>
-          <label class="toggle"><input id="autoplay" type="checkbox" checked> Play on change</label>
-          <span class="mono" id="outDur"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="block" aria-labelledby="varTitle">
-      <div class="block-head"><h2 id="varTitle">Variations</h2></div>
-      <div class="sliders">
-        <div class="slider">
-          <label for="varCount">How many</label>
-          <select id="varCount"><option>4</option><option>6</option><option selected>8</option><option>12</option></select>
-        </div>
-      </div>
-      <div class="sliders" id="spread"></div>
-      <label class="toggle"><input id="evenLoud" type="checkbox" checked> Even out loudness</label>
-      <div class="row">
-        <button id="genBtn" class="primary" type="button">Make variations</button>
-        <button id="replaceBtn" type="button" hidden>Replace discarded</button>
-      </div>
-      <p class="note warn" id="staleNote" hidden>Changed since these were made. Make them again to update.</p>
-      <div class="vars" id="vars"></div>
-    </section>
-
-    <section class="block" aria-labelledby="expTitle">
-      <div class="block-head"><h2 id="expTitle">Export</h2></div>
-      <div class="add">
-        <input id="soundName" type="text" maxlength="40" value="sound" spellcheck="false" autocapitalize="off" aria-label="File name">
-        <button id="exportBtn" type="button" disabled>Export .zip</button>
-      </div>
-      <p class="mono hint" id="namePreview"></p>
-      <details class="settings">
-        <summary id="expSummary">File settings</summary>
-        <div class="sliders">
-          <div class="slider">
-            <label for="expFormat">File type</label>
-            <select id="expFormat">
-              <option value="ogg" selected>Ogg Vorbis</option>
-              <option value="mp3">MP3</option>
-              <option value="wav">WAV</option>
-            </select>
-          </div>
-          <div class="slider">
-            <label for="expQuality">Quality</label>
-            <select id="expQuality">
-              <option value="small">Smallest files</option>
-              <option value="balanced" selected>Balanced</option>
-              <option value="high">High</option>
-            </select>
-          </div>
-          <div class="slider">
-            <label for="expRate">Sample rate</label>
-            <select id="expRate">
-              <option value="44100" selected>44.1 kHz</option>
-              <option value="22050">22 kHz (smaller)</option>
-            </select>
-          </div>
-        </div>
-        <p class="hint" id="formatHint"></p>
-      </details>
-      <p class="note" id="exportNote" hidden></p>
-    </section>
-  </main>
-
   <footer id="footer">
     <p>Saved in this browser as you go. Your recordings never leave this device.</p>
   </footer>
 </div>
+
+<dialog id="exportDlg" aria-labelledby="dlgTitle">
+  <form method="dialog" class="dlg">
+    <h2 id="dlgTitle">File settings</h2>
+    <label class="field">File type
+      <select id="expFormat">
+        <option value="ogg" selected>Ogg Vorbis</option>
+        <option value="mp3">MP3</option>
+        <option value="wav">WAV</option>
+      </select>
+    </label>
+    <label class="field">Quality
+      <select id="expQuality">
+        <option value="small">Smallest files</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="high">High</option>
+      </select>
+    </label>
+    <label class="field">Sample rate
+      <select id="expRate">
+        <option value="44100" selected>44.1 kHz</option>
+        <option value="22050">22 kHz (smaller)</option>
+      </select>
+    </label>
+    <label class="toggle"><input id="evenLoud" type="checkbox" checked> Even out loudness across takes</label>
+    <p class="hint" id="formatHint"></p>
+    <button class="done" value="ok">Done</button>
+  </form>
+</dialog>
 
 <div class="toast" id="toast" hidden role="status"><span id="toastTxt"></span><button id="toastBtn" type="button"></button></div>
 

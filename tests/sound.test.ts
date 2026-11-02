@@ -1,121 +1,158 @@
 import { describe, expect, it } from "vitest";
+import { FADER_KEYS, TWO_WAY, anySet, defaultFaders, isSet, randomFaders, toFaders, type FaderKey, type Faders } from "../src/dsp/faders";
 import { findTakes, sliceSource } from "../src/dsp/prep";
 import { mulberry32 } from "../src/dsp/rng";
-import { DEFAULT_FX, DEFAULT_SPREAD, nudge, renderSound, spreadPitches, takeOrder, type Effects, type LayerSettings, type Part } from "../src/dsp/sound";
+import { CEILING, renderFaders } from "../src/dsp/sound";
+import { stretch } from "../src/dsp/stretch";
 import { EXAMPLES, makeExample, type ExampleName } from "../src/sounds/examples";
 import { maxAbsDiff } from "./helpers";
 
-const NEUTRAL: LayerSettings = { volume: 0, pitch: 0, tone: 0, delay: 0, reverse: false };
 const peak = (d: Float32Array) => d.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+const rms = (d: Float32Array) => Math.sqrt(d.reduce((s, x) => s + x * x, 0) / d.length);
 
-/** First take of an example, as the app would use it. */
+/** A take of an example, as the app would use it. */
 function take(name: ExampleName = EXAMPLES[1], i = 0): AudioBuffer {
   const m = makeExample(name);
   return sliceSource(m, findTakes(m)[i])!;
 }
 
-const part = (buf: AudioBuffer, s: Partial<LayerSettings> = {}): Part => ({ ...NEUTRAL, ...s, buf });
-const fx = (f: Partial<Effects> = {}): Effects => ({ ...DEFAULT_FX, ...f });
+const fx = (o: Partial<Faders> = {}): Faders => ({ ...defaultFaders(), ...o });
 
-describe("renderSound", () => {
-  it("leaves the recording as it is when every setting is neutral", async () => {
+/** Zero crossings per second: a rough pitch measure for a steady tone. */
+function crossings(d: Float32Array, sr: number): number {
+  let n = 0;
+  for (let i = 1; i < d.length; i++) if (d[i - 1] < 0 !== d[i] < 0) n++;
+  return n / (d.length / sr);
+}
+
+function tone(hz: number, seconds: number, sr = 44100): AudioBuffer {
+  const b = new AudioBuffer({ length: Math.floor(seconds * sr), sampleRate: sr, numberOfChannels: 1 });
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = 0.9 * Math.sin((2 * Math.PI * hz * i) / sr) * Math.min(1, i / 400, (d.length - i) / 400);
+  return b;
+}
+
+describe("renderFaders", () => {
+  it("leaves the recording as it is when every fader is at its default", async () => {
     const src = take();
-    const out = await renderSound([part(src)], DEFAULT_FX);
+    const out = await renderFaders(src, defaultFaders());
     // Same samples, only rescaled from a 0.9 to a 0.891 peak (the last 8 ms fade out)
-    const expected = src.getChannelData(0).map((x) => (x * 0.891) / 0.9);
+    const expected = src.getChannelData(0).map((x) => (x * CEILING) / 0.9);
     const body = Math.floor(out.length - 0.01 * 44100);
     expect(maxAbsDiff(out.getChannelData(0).subarray(0, body), expected.subarray(0, body))).toBeLessThan(1e-4);
   });
 
-  it("peaks at -1 dBFS", async () => {
-    const out = await renderSound([part(take(), { pitch: -5 }), part(take(), { pitch: 7, delay: 30 })], fx({ distort: 0.5, reverb: 0.4 }));
-    expect(peak(out.getChannelData(0))).toBeCloseTo(0.891, 3);
+  it("peaks at -1 dBFS at Level 0, whatever else is set", async () => {
+    const out = await renderFaders(take(), fx({ pitch: -0.4, grit: 0.5, reverb: 0.4, echo: 0.5, punch: 0.7, attack: 0.5 }));
+    expect(peak(out.getChannelData(0))).toBeCloseTo(CEILING, 3);
   });
 
-  it("an octave down is twice as long, like a tape", async () => {
-    const src = take(EXAMPLES[4]);
-    const a = await renderSound([part(src)], DEFAULT_FX);
-    const b = await renderSound([part(src, { pitch: -12 })], DEFAULT_FX);
-    expect(b.duration / a.duration).toBeGreaterThan(1.8);
-    expect(b.duration / a.duration).toBeLessThan(2.1);
+  it("Pitch keeps the length and Speed keeps the pitch", async () => {
+    const src = tone(440, 0.6);
+    const base = await renderFaders(src, defaultFaders());
+    const up = await renderFaders(src, fx({ pitch: 1 }));
+    const slow = await renderFaders(src, fx({ speed: -1 }));
+    expect(up.duration / base.duration).toBeGreaterThan(0.95);
+    expect(up.duration / base.duration).toBeLessThan(1.05);
+    expect(crossings(up.getChannelData(0), 44100) / crossings(base.getChannelData(0), 44100)).toBeCloseTo(2, 1);
+    expect(slow.duration / base.duration).toBeCloseTo(2, 1);
+    expect(crossings(slow.getChannelData(0), 44100) / crossings(base.getChannelData(0), 44100)).toBeCloseTo(1, 1);
   });
 
-  it("reverse plays the take backwards", async () => {
+  it("echo and reverb add a tail; Fade shortens the sound", async () => {
     const src = take();
-    const out = (await renderSound([part(src, { reverse: true })], DEFAULT_FX)).getChannelData(0);
-    // A knock is loud at the start; reversed, the loud part is at the end
-    const n = out.length;
-    expect(peak(out.subarray(Math.floor(n * 0.7)))).toBeGreaterThan(peak(out.subarray(0, Math.floor(n * 0.3))) * 3);
+    const base = await renderFaders(src, defaultFaders());
+    expect((await renderFaders(src, fx({ echo: 0.6 }))).duration).toBeGreaterThan(base.duration + 0.2);
+    expect((await renderFaders(src, fx({ reverb: 0.6, room: 0.8 }))).duration).toBeGreaterThan(base.duration + 0.5);
+    const breath = take(EXAMPLES[4]);
+    const long = await renderFaders(breath, defaultFaders());
+    const faded = await renderFaders(breath, fx({ fade: 0.9 }));
+    expect(faded.duration).toBeLessThan(long.duration * 0.8);
   });
 
-  it("starts a delayed layer later, and drops silence at the front", async () => {
+  it("Level below 0 is quieter; above 0 is denser at the same peak", async () => {
     const src = take();
-    const one = await renderSound([part(src)], DEFAULT_FX);
-    const two = await renderSound([part(src), part(src, { delay: 200 })], DEFAULT_FX);
-    expect(two.duration - one.duration).toBeCloseTo(0.2, 1);
-    const late = await renderSound([part(src, { delay: 100 })], DEFAULT_FX);
-    expect(Math.abs(late.length - one.length)).toBeLessThan(10);
+    const base = (await renderFaders(src, defaultFaders())).getChannelData(0);
+    const quiet = (await renderFaders(src, fx({ level: -0.5 }))).getChannelData(0);
+    const loud = (await renderFaders(src, fx({ level: 0.5 }))).getChannelData(0);
+    expect(peak(quiet)).toBeCloseTo(CEILING / 2, 2);
+    expect(peak(loud)).toBeCloseTo(CEILING, 3);
+    expect(rms(loud)).toBeGreaterThan(rms(base) * 1.2);
   });
 
-  it("every effect changes the sound, and reverb adds a tail", async () => {
+  it("every fader changes the sound", async () => {
     const src = take();
-    const dry = (await renderSound([part(src)], DEFAULT_FX)).getChannelData(0);
-    for (const f of [{ compress: 0.7 }, { distort: 0.5 }, { lofi: 0.6 }, { reverb: 0.5 }, { pitch: 0, tone: -0.5 }]) {
-      const isFx = !("tone" in f);
-      const out = (await renderSound([part(src, isFx ? {} : f)], isFx ? fx(f) : DEFAULT_FX)).getChannelData(0);
-      expect(maxAbsDiff(out, dry), JSON.stringify(f)).toBeGreaterThan(0.05);
+    const base = (await renderFaders(src, defaultFaders())).getChannelData(0);
+    // Clean is applied when the take is cut from the recording (sliceSource), not here
+    for (const k of FADER_KEYS.filter((x) => x !== "clean")) {
+      // Echo time and repeats only matter with echo on, room only with reverb on
+      const on: Partial<Faders> = k === "etime" || k === "erep" ? { echo: 0.5 } : k === "room" ? { reverb: 0.5 } : {};
+      const ref = Object.keys(on).length ? (await renderFaders(src, fx(on))).getChannelData(0) : base;
+      const v = k === "etime" || k === "erep" || k === "room" ? 0.9 : TWO_WAY.has(k) ? -0.6 : 0.6;
+      const out = (await renderFaders(src, fx({ ...on, [k]: v }))).getChannelData(0);
+      const differs = out.length !== ref.length || maxAbsDiff(out, ref) > 0.01;
+      expect(differs, k).toBe(true);
     }
-    const wet = await renderSound([part(src)], fx({ reverb: 0.5, room: 0.6 }));
-    expect(wet.length).toBeGreaterThan(dry.length + 0.3 * 44100);
   });
 
   it("gives the same samples for the same settings", async () => {
-    const parts = [part(take(), { pitch: -3, tone: 0.3 })];
-    const a = await renderSound(parts, fx({ reverb: 0.3, distort: 0.2 }));
-    const b = await renderSound(parts, fx({ reverb: 0.3, distort: 0.2 }));
+    const f = fx({ pitch: 0.3, speed: -0.2, echo: 0.4, reverb: 0.3, lofi: 0.4 });
+    const [a, b] = await Promise.all([renderFaders(take(), f), renderFaders(take(), f)]);
     expect(Array.from(a.getChannelData(0))).toEqual(Array.from(b.getChannelData(0)));
   });
 });
 
-describe("variations", () => {
-  it("spread pitches evenly, so no two in a set are close", () => {
-    for (const seed of [1, 2, 3]) {
-      const p = spreadPitches(8, 2, mulberry32(seed)).sort((a, b) => a - b);
-      for (let i = 1; i < p.length; i++) expect(p[i] - p[i - 1]).toBeGreaterThan(0.2);
-      expect(p[p.length - 1] - p[0]).toBeGreaterThan(3);
-      expect(Math.max(...p.map(Math.abs))).toBeLessThanOrEqual(2);
+describe("stretch", () => {
+  it("changes the length by the factor and keeps a tone's pitch", () => {
+    const src = tone(300, 0.5).getChannelData(0);
+    for (const factor of [0.5, 0.8, 1.6, 2]) {
+      const out = stretch(src, factor, 44100);
+      expect(out.length).toBe(Math.round(src.length * factor));
+      expect(crossings(out, 44100) / crossings(src, 44100)).toBeCloseTo(1, 1);
     }
   });
 
-  it("use every take before repeating one, never twice in a row", () => {
-    for (const seed of [1, 2, 3, 4]) {
-      const o = takeOrder(8, 3, mulberry32(seed));
-      expect(new Set(o.slice(0, 3)).size).toBe(3);
-      for (let i = 1; i < o.length; i++) expect(o[i]).not.toBe(o[i - 1]);
+  it("keeps the level of a steady tone (no gaps or doubling)", () => {
+    const src = tone(220, 0.5).getChannelData(0);
+    const out = stretch(src, 1.7, 44100);
+    expect(rms(out.subarray(2000, out.length - 2000)) / rms(src.subarray(2000, src.length - 2000))).toBeCloseTo(1, 1);
+  });
+});
+
+describe("faders", () => {
+  it("default to the recording as it is", () => {
+    expect(anySet(defaultFaders())).toBe(false);
+  });
+
+  it("load from older or damaged saves", () => {
+    const f = toFaders({ pitch: 5, grit: "x", nonsense: 1 });
+    expect(f.pitch).toBe(1);
+    expect(f.grit).toBe(0);
+    expect(f.room).toBe(defaultFaders().room);
+  });
+
+  it("Random leaves locked faders, cleanup and level alone and changes 3 to 5 others", () => {
+    const rand = mulberry32(5);
+    const from = fx({ clean: 0.4, level: 0.2, pitch: 0.5, grit: 0.3 });
+    const locked = new Set<FaderKey>(["pitch", "reverb"]);
+    for (let i = 0; i < 50; i++) {
+      const f = randomFaders(from, locked, rand);
+      expect(f.clean).toBe(0.4);
+      expect(f.level).toBe(0.2);
+      expect(f.pitch).toBe(0.5);
+      expect(f.reverb).toBe(0);
+      const changed = FADER_KEYS.filter((k) => isSet(f, k) && !["clean", "level", "pitch"].includes(k));
+      expect(changed.length).toBeGreaterThanOrEqual(2); // a picked value can land on the default
+      expect(changed.length).toBeLessThanOrEqual(6); // plus echo turned on for its settings
     }
-    expect(takeOrder(4, 1, mulberry32(1))).toEqual([0, 0, 0, 0]);
   });
 
-  it("nudges follow the seed and keep layer 1 on time", () => {
-    const layers = [NEUTRAL, { ...NEUTRAL, delay: 50 }];
-    const a = nudge(layers, { seed: 5, pitch: 1.5, takes: [0, 0] }, DEFAULT_SPREAD);
-    expect(a).toEqual(nudge(layers, { seed: 5, pitch: 1.5, takes: [0, 0] }, DEFAULT_SPREAD));
-    expect(a[0].delay).toBe(0);
-    expect(Math.abs(a[0].pitch - 1.5)).toBeLessThanOrEqual(DEFAULT_SPREAD.pitch * 0.15);
-    expect(nudge(layers, { seed: 6, pitch: 1.5, takes: [0, 0] }, DEFAULT_SPREAD)).not.toEqual(a);
-  });
-
-  it("are clearly different from each other", async () => {
-    const m = makeExample(EXAMPLES[1]);
-    const takes = findTakes(m).map((r) => sliceSource(m, r)!);
-    const pitches = spreadPitches(4, 2, mulberry32(9));
-    const order = takeOrder(4, takes.length, mulberry32(9));
-    const outs = await Promise.all(pitches.map((p, i) => renderSound([part(takes[order[i]], { pitch: p })], DEFAULT_FX)));
-    for (let i = 0; i < outs.length; i++)
-      for (let j = i + 1; j < outs.length; j++) {
-        const a = outs[i].getChannelData(0);
-        const b = outs[j].getChannelData(0);
-        expect(maxAbsDiff(a, b)).toBeGreaterThan(0.3);
-      }
+  it("Random turns echo on when it picks only echo's settings", () => {
+    const rand = mulberry32(1);
+    const locked = new Set<FaderKey>(FADER_KEYS.filter((k) => !["etime", "erep", "echo"].includes(k)));
+    for (let i = 0; i < 20; i++) {
+      const f = randomFaders(defaultFaders(), locked, rand);
+      if (isSet(f, "etime") || isSet(f, "erep")) expect(isSet(f, "echo")).toBe(true);
+    }
   });
 });

@@ -1,8 +1,8 @@
 import { $ } from "./dom";
 import { scheduleSave } from "./persist";
-import { copyLibrary, state, type Library } from "./state";
+import { copyLibrary, pristine, state, type Design, type Library } from "./state";
 
-// Undo / redo over the whole library. Variations aren't undone: they keep the settings they were made with.
+// Undo / redo over the whole library: recordings, tags, faders, locks, variations and the checklist.
 
 const LIMIT = 50;
 const undoStack: Library[] = [];
@@ -11,9 +11,12 @@ let current: Library | null = null;
 let restoreFn: () => void = () => {};
 let restoring = false;
 
-/** Recordings never change, so comparing them by id is enough. */
+/**
+ * What counts as a change. A recording's audio is compared by length (it's only ever replaced by a
+ * longer one, with a new take). Designs nobody has touched are the same as none.
+ */
 const key = (l: Library) =>
-  JSON.stringify(l, (k, v) => (k === "raw" || k === "vars" || k === "varMeta" ? undefined : v));
+  JSON.stringify({ ...l, designs: Object.fromEntries(Object.entries(l.designs).filter(([, d]) => !pristine(d as Design))) }, (k, v) => (k === "raw" ? v.data.length : v));
 
 function updateButtons(): void {
   $<HTMLButtonElement>("undoBtn").hidden = !undoStack.length;
@@ -66,12 +69,6 @@ function go(from: Library[], to: Library[]): void {
   to.push(current);
   current = s;
   const next = copyLibrary(s);
-  // Keep the variations as they are now
-  for (const [id, d] of Object.entries(next.designs)) {
-    const now = state.lib.designs[id];
-    d.vars = now ? now.vars : [];
-    d.varMeta = now ? now.varMeta : null;
-  }
   restoring = true;
   try {
     state.lib = next;

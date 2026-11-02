@@ -1,12 +1,14 @@
-import { MAX_RAW_SECONDS, findTakes, toMono, type Mono } from "../dsp/prep";
+import { MAX_RAW_SECONDS, MAX_TAKES, findTakes, toMono, type Mono } from "../dsp/prep";
 import { $ } from "./dom";
 import { commit } from "./history";
 import { markFresh, renderLibrary } from "./home";
+import { playResult } from "./panel";
 import { audio } from "./playback";
-import { state, uid, type Clip } from "./state";
+import { clipById, state, uid, type Clip } from "./state";
 import { toast } from "./toast";
 
 // The record button: one tap to record anything, one tap to stop. It lands in the library straight away.
+// While a sound is open, it records a new take of that sound instead.
 
 /** Safety stop for a recording that was never stopped. */
 const MAX_RECORD_SECONDS = 20;
@@ -27,9 +29,53 @@ export function addRecording(m: Mono | null, tags: string[] = [], at = Date.now(
     toast(`Your library is full (${MAX_CLIPS}). Delete a few to make room.`);
     return null;
   }
-  const c: Clip = { id: uid(), raw: m, takes: findTakes(m), gate: 0, at, tags, projects: [] };
+  const c: Clip = { id: uid(), raw: m, takes: findTakes(m), at, name: "", tags, projects: [] };
   state.lib.clips.push(c);
   return c;
+}
+
+/** Longest a recording can grow to with new takes, in seconds. */
+const MAX_WITH_TAKES = 2 * MAX_RAW_SECONDS;
+
+/** Same audio at another sample rate (linear; only for a take recorded at a different rate). */
+function resampled(m: Mono, rate: number): Mono {
+  if (m.sampleRate === rate) return m;
+  const n = Math.floor((m.data.length * rate) / m.sampleRate);
+  const data = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * m.sampleRate) / rate;
+    const a = Math.floor(x);
+    const b = Math.min(m.data.length - 1, a + 1);
+    data[i] = m.data[a] + (m.data[b] - m.data[a]) * (x - a);
+  }
+  return { data, sampleRate: rate };
+}
+
+/** Adds a recording to the end of an existing one as new takes. Returns the first new take's index. */
+export function addTake(c: Clip, m: Mono | null): number | null {
+  if (!m) {
+    toast("That was silent. Try again closer to the mic.");
+    return null;
+  }
+  if (c.takes.length >= MAX_TAKES) {
+    toast(`That sound has ${MAX_TAKES} takes already. Remove one first.`);
+    return null;
+  }
+  const add = resampled(m, c.raw.sampleRate);
+  const gap = Math.round(0.25 * c.raw.sampleRate);
+  const at = c.raw.data.length + gap;
+  if ((at + add.data.length) / c.raw.sampleRate > MAX_WITH_TAKES) {
+    toast("That sound is as long as it can get. Record a new sound instead.");
+    return null;
+  }
+  const data = new Float32Array(at + add.data.length);
+  data.set(c.raw.data);
+  data.set(add.data, at);
+  const first = c.takes.length;
+  // A new recording, not a change to the old one: undo snapshots keep sharing the old audio
+  c.raw = { data, sampleRate: c.raw.sampleRate };
+  for (const r of findTakes(add).slice(0, MAX_TAKES - first)) c.takes.push({ start: r.start + at, end: r.end + at });
+  return first;
 }
 
 /** After a new recording: show it, save it, offer to tag it. */
@@ -73,8 +119,20 @@ function startMeter(stream: MediaStream, rec: MediaRecorder): void {
 
 function setRecording(on: boolean): void {
   $("rec").classList.toggle("on", on);
-  $("rec").setAttribute("aria-label", on ? "Stop recording" : "Record");
-  $("recHint").textContent = on ? "Tap to stop" : "Record anything";
+  if (on) {
+    $("rec").setAttribute("aria-label", "Stop recording");
+    $("recHint").textContent = "Tap to stop";
+  } else renderLibrary(); // puts the dock back for what's open
+}
+
+/** After a new take: show it in the panel and play it. */
+function tookTake(c: Clip, first: number): void {
+  const n = c.takes.length - first;
+  state.selTake = first;
+  renderLibrary();
+  commit();
+  toast(n > 1 ? `Takes ${first + 1}–${c.takes.length} added` : `Take ${first + 1} added`, { label: "Undo", run: () => document.getElementById("undoBtn")?.click() });
+  void playResult();
 }
 
 /** Starts recording, or stops it if already recording. The mic needs https:// or localhost. */
@@ -95,6 +153,8 @@ export async function toggleRecord(): Promise<void> {
   const rec = new MediaRecorder(stream);
   recorder = rec;
   const at = Date.now();
+  // A sound open when recording starts gets the new take, even if it's closed meanwhile
+  const into = state.openId;
   rec.ondataavailable = (e) => chunks.push(e.data);
   rec.onstop = async () => {
     clearTimeout(recTimer);
@@ -102,7 +162,17 @@ export async function toggleRecord(): Promise<void> {
     setRecording(false);
     try {
       const ab = await new Blob(chunks).arrayBuffer();
-      const c = addRecording(toMono(await audio().decodeAudioData(ab)), [], at);
+      const m = toMono(await audio().decodeAudioData(ab));
+      const target = into ? clipById(into) : undefined;
+      if (target) {
+        const first = addTake(target, m);
+        if (first !== null) {
+          state.openId = target.id;
+          tookTake(target, first);
+        }
+        return;
+      }
+      const c = addRecording(m, [], at);
       if (c) added(c);
     } catch {
       toast("Couldn't read that recording. Try again.");

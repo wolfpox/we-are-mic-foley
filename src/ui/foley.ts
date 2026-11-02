@@ -8,7 +8,7 @@ const CARDS: [string, string][] = [
   ["Get close.", "A hand's width from the mic. Close sounds big and clean."],
   ["Do it five times.", "No two takes match. That's what keeps a game from sounding robotic."],
   ["Slower is bigger.", "Pitch a sound down and it grows. Pitch it up and it shrinks."],
-  ["Stack it.", "Big sounds are small sounds layered. A slap plus a thump is a punch."],
+  ["One sound, many sounds.", "Found something you like? Name it. Slow, big, crunchy: each variation comes out of every take."],
   ["Record now, sort later.", "Heard something interesting? Hit record. Tag it whenever you like."],
 ];
 

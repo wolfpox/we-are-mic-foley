@@ -7,9 +7,9 @@ import { renderBase, renderVariation } from "./engine";
 import { commit } from "./history";
 import { scheduleSave } from "./persist";
 import { drawWave, ms, play } from "./playback";
-import { clipById, copyClip, soundKey, state, usedClips, type VarMeta, type Variation } from "./state";
+import { clipById, copyClip, design, fileBase, soundKey, state, usedClips, type VarMeta, type Variation } from "./state";
 
-const EMPTY = '<p class="empty">Variations appear here. Tap one to hear it.</p>';
+const EMPTY = "";
 
 let renderTimer: ReturnType<typeof setTimeout> | undefined;
 let renderToken = 0;
@@ -19,9 +19,10 @@ export function scheduleRender(autoplay: boolean): void {
   clearTimeout(renderTimer);
   updateStale();
   renderTimer = setTimeout(async () => {
-    const p = state.project;
+    const d = design();
+    if (!d) return;
     const token = ++renderToken;
-    const job = renderBase(p.layers, p.fx, p.clips);
+    const job = renderBase(d.layers, d.fx, state.lib.clips);
     const buf = job && (await job);
     if (token !== renderToken) return; // a newer render started meanwhile
     state.out = buf;
@@ -31,11 +32,10 @@ export function scheduleRender(autoplay: boolean): void {
   }, 140);
 }
 
-export function clearVars(): void {
-  state.vars = [];
-  state.varMeta = null;
-  renderTiles();
-  scheduleSave();
+/** Copies the variations' settings into the open sound effect, so they're saved and counted. */
+function syncSaved(): void {
+  const d = design();
+  if (d) d.vars = state.vars.map((v) => ({ seed: v.seed, pitch: v.pitch, takes: v.takes, kept: v.kept }));
 }
 
 function scaled(b: AudioBuffer, gain: number): AudioBuffer {
@@ -72,20 +72,12 @@ export function setEvenLoudness(on: boolean): void {
 /** Name for the n-th file (1-based), e.g. footstep_03. */
 export const varName = (file: string, n: number) => `${file}_${String(n).padStart(2, "0")}`;
 
-/** Lowercase letters, digits, - and _ only, so the names work in every engine and file system. */
-export const fileBase = (name: string) =>
-  name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 40) || "sound";
 
 /** Shows a hint when the settings changed after the variations were made. */
 function updateStale(): void {
-  const m = state.varMeta;
-  const p = state.project;
-  const stale = !!m && state.vars.length > 0 && soundKey(m.layers, m.fx, m.spread, m.sources) !== soundKey(p.layers, p.fx, p.spread, usedClips(p));
+  const d = design();
+  const m = d?.varMeta;
+  const stale = !!d && !!m && state.vars.length > 0 && soundKey(m.layers, m.fx, m.spread, m.sources) !== soundKey(d.layers, d.fx, d.spread, usedClips(d.layers));
   $("staleNote").hidden = !stale;
 }
 
@@ -95,7 +87,7 @@ function updateControls(): void {
   const kept = state.vars.filter((v) => v.kept).length;
   const discarded = total - kept;
   $<HTMLButtonElement>("exportBtn").disabled = kept === 0;
-  $<HTMLButtonElement>("exportBtn").textContent = kept && discarded ? `Export ${kept} sounds (.zip)` : "Export pack (.zip)";
+  $<HTMLButtonElement>("exportBtn").textContent = kept ? `Export ${kept} sounds` : "Export .zip";
   const replace = $<HTMLButtonElement>("replaceBtn");
   replace.hidden = discarded === 0;
   replace.textContent = `Replace ${discarded} discarded`;
@@ -114,7 +106,7 @@ function renderTiles(): Element[] {
   const box = $("vars");
   box.innerHTML = "";
   updateControls();
-  const m = state.varMeta;
+  const m = design()?.varMeta;
   if (!state.vars.length || !m) {
     box.innerHTML = EMPTY;
     return [];
@@ -157,6 +149,7 @@ function renderTiles(): Element[] {
       levelPack();
       redrawVariations();
       updateControls();
+      syncSaved();
       scheduleSave();
     };
 
@@ -242,17 +235,17 @@ async function make(m: VarMeta, spec: VarSpec, name: string, kept = true): Promi
 }
 
 export async function generate(): Promise<void> {
-  const p = state.project;
-  const n = p.count;
+  const d = design();
+  if (!d || !d.layers.length) return;
+  const id = state.soundId;
   const m: VarMeta = {
-    layers: p.layers.map((l) => ({ ...l })),
-    fx: { ...p.fx },
-    spread: { ...p.spread },
-    name: fileBase(p.name),
-    sources: usedClips(p).map(copyClip),
+    layers: d.layers.map((l) => ({ ...l })),
+    fx: { ...d.fx },
+    spread: { ...d.spread },
+    name: fileBase(d.name),
+    sources: usedClips(d.layers).map(copyClip),
   };
-  if (!m.layers.length) return;
-  const specs = planSet(n, m, newSeed());
+  const specs = planSet(d.count, m, newSeed());
   const vars = await busy($<HTMLButtonElement>("genBtn"), "Rendering…", async () => {
     const out: Variation[] = [];
     for (const [i, s] of specs.entries()) {
@@ -261,30 +254,36 @@ export async function generate(): Promise<void> {
     }
     return out;
   });
-  state.vars = vars;
-  state.varMeta = m;
-  levelPack();
-  const tiles = renderTiles();
+  d.varMeta = m;
+  d.vars = vars.map((v) => ({ seed: v.seed, pitch: v.pitch, takes: v.takes, kept: true }));
   scheduleSave();
-  audition(tiles, vars.map((v) => v.buf));
+  if (state.soundId !== id) return; // they moved on to another sound meanwhile
+  state.vars = vars;
+  levelPack();
+  audition(renderTiles(), vars.map((v) => v.buf));
 }
 
-/** Re-renders saved variations from their specs (after a reload). Plays nothing. */
-export async function restoreVariations(meta: VarMeta, saved: (VarSpec & { kept: boolean })[]): Promise<void> {
+/** Re-renders the open sound effect's saved variations. Plays nothing. */
+export async function restoreVariations(): Promise<void> {
+  const d = design();
+  const id = state.soundId;
+  const meta = d?.varMeta;
   const vars: Variation[] = [];
-  for (const [i, s] of saved.entries()) {
-    const v = await make(meta, s, varName(meta.name, i + 1), s.kept);
-    if (v) vars.push(v);
+  if (d && meta) {
+    for (const [i, s] of d.vars.entries()) {
+      const v = await make(meta, s, varName(meta.name, i + 1), s.kept);
+      if (v) vars.push(v);
+      if (state.soundId !== id) return;
+    }
   }
   state.vars = vars;
-  state.varMeta = vars.length ? meta : null;
   levelPack();
   renderTiles();
 }
 
 /** Re-rolls only the discarded variations, with the settings the set was made with. */
 export async function replaceDiscarded(): Promise<void> {
-  const m = state.varMeta;
+  const m = design()?.varMeta;
   if (!m) return;
   const slots = state.vars.map((v, i) => (v.kept ? -1 : i)).filter((i) => i >= 0);
   await busy($<HTMLButtonElement>("replaceBtn"), "Rendering…", async () => {
@@ -294,6 +293,7 @@ export async function replaceDiscarded(): Promise<void> {
     }
   });
   levelPack();
+  syncSaved();
   const tiles = renderTiles();
   scheduleSave();
   audition(slots.map((i) => tiles[i]), slots.map((i) => state.vars[i].buf));
@@ -301,9 +301,10 @@ export async function replaceDiscarded(): Promise<void> {
 
 /** Renames the current variations to match the sound's name. */
 export function renameVariations(): void {
-  const m = state.varMeta;
-  if (!m) return;
-  m.name = fileBase(state.project.name);
+  const d = design();
+  const m = d?.varMeta;
+  if (!d || !m) return;
+  m.name = fileBase(d.name);
   state.vars.forEach((v, i) => (v.name = varName(m.name, i + 1)));
   renderTiles();
   scheduleSave();
@@ -315,52 +316,59 @@ export function redrawVariations(): void {
     .forEach((c, i) => state.vars[i] && drawWave(c, state.vars[i].buf));
 }
 
-/** Variation controls, from the project's settings. */
+/** Variation controls, from the open sound effect's settings. */
 export function renderSpread(): void {
-  const p = state.project;
+  const d = design();
   const box = $("spread");
   box.innerHTML = "";
-  const sp = p.spread;
+  if (!d) return;
+  const sp = d.spread;
   box.append(
     slider({
-      id: "spPitch", label: "Pitch spread", min: 0, max: 6, step: 0.5, value: sp.pitch, lo: "Same", hi: "±6 st",
-      hint: "Spread evenly across the set, so no two sound alike.",
+      id: "spPitch", label: "Pitch spread", min: 0, max: 6, step: 0.5, value: sp.pitch,
       format: (v) => (v ? `±${v} st` : "Off"),
       onInput: (v) => { sp.pitch = v; updateStale(); },
       onChange: commit,
     }),
     slider({
-      id: "spTone", label: "Tone spread", min: 0, max: 100, value: Math.round(sp.tone * 100), lo: "Same", hi: "Wide",
+      id: "spTone", label: "Tone spread", min: 0, max: 100, value: Math.round(sp.tone * 100),
       format: percent,
       onInput: (v) => { sp.tone = v / 100; updateStale(); },
       onChange: commit,
     }),
-    slider({
-      id: "spTiming", label: "Timing spread", min: 0, max: 100, value: Math.round(sp.timing * 100), lo: "Tight", hi: "Loose",
-      hint: "Shifts layers against each other. Needs two or more layers.",
-      format: (v) => (v ? `±${Math.round(v * 0.4)} ms` : "Off"),
-      onInput: (v) => { sp.timing = v / 100; updateStale(); },
-      onChange: commit,
-    }),
   );
-  $<HTMLSelectElement>("varCount").value = String(p.count);
-  $<HTMLInputElement>("soundName").value = p.name;
+  if (d.layers.length > 1)
+    box.append(
+      slider({
+        id: "spTiming", label: "Timing spread", min: 0, max: 100, value: Math.round(sp.timing * 100),
+        format: (v) => (v ? `±${Math.round(v * 0.4)} ms` : "Off"),
+        onInput: (v) => { sp.timing = v / 100; updateStale(); },
+        onChange: commit,
+      }),
+    );
+  $<HTMLSelectElement>("varCount").value = String(d.count);
+  $<HTMLInputElement>("soundName").value = d.name;
   updateNamePreview();
 }
 
-function updateNamePreview(): void {
-  $("namePreview").textContent = `${varName(fileBase(state.project.name), 1)}.${$<HTMLSelectElement>("expFormat").value}`;
+export function updateNamePreview(): void {
+  const d = design();
+  $("namePreview").textContent = d ? `${varName(fileBase(d.name), 1)}.${$<HTMLSelectElement>("expFormat").value} …` : "";
 }
 
 export function initVariations(): void {
   $("varCount").addEventListener("change", () => {
-    state.project.count = Number($<HTMLSelectElement>("varCount").value);
+    const d = design();
+    if (!d) return;
+    d.count = Number($<HTMLSelectElement>("varCount").value);
     commit();
   });
   $("soundName").addEventListener("change", () => {
+    const d = design();
+    if (!d) return;
     const el = $<HTMLInputElement>("soundName");
-    state.project.name = fileBase(el.value);
-    el.value = state.project.name;
+    d.name = fileBase(el.value);
+    el.value = d.name;
     renameVariations();
     updateNamePreview();
     commit();
@@ -373,4 +381,3 @@ export function initVariations(): void {
   $("genBtn").onclick = generate;
   $("replaceBtn").onclick = replaceDiscarded;
 }
-

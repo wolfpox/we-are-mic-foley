@@ -2,10 +2,10 @@ import { describeFormat, encodeSound, type ExportOptions, type Format, type Outp
 import { ALL_TAKES } from "../dsp/sound";
 import { $, showNote } from "./dom";
 import { scheduleSave } from "./persist";
-import { clipById, state } from "./state";
+import { clipById, clipLabel, design, state } from "./state";
 import { varName } from "./variations";
 
-const TOOL = "We Are Mic Foley v0.3";
+const TOOL = "We Are Mic Foley v0.4";
 
 const HINTS: Record<Format, string> = {
   ogg: "Ogg Vorbis works in Godot, Unity, GameMaker and every web browser. Good default for games.",
@@ -63,7 +63,7 @@ const round = (v: number, places = 2) => Math.round(v * 10 ** places) / 10 ** pl
 export async function exportPack(): Promise<void> {
   const note = $("exportNote");
   const btn = $<HTMLButtonElement>("exportBtn");
-  const m = state.varMeta;
+  const m = design()?.varMeta;
   if (!m || !state.vars.some((v) => v.kept)) return;
   const opts = readExportOptions();
   btn.disabled = true;
@@ -98,7 +98,7 @@ export async function exportPack(): Promise<void> {
         const c = clipById(l.clip, m.sources);
         const sr = c?.raw.sampleRate ?? 44100;
         return {
-          recording: c?.name ?? "?",
+          recording: c ? clipLabel(c) : "?",
           takesMs: c?.takes.map((t) => [msOf(t.start, sr), msOf(t.end, sr)]) ?? [],
           noiseCleanup: c?.gate ?? 0,
           take: l.take === ALL_TAKES ? "all" : l.take + 1,

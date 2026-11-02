@@ -15,7 +15,17 @@ Solo and small indie game developers with no audio budget and no audio-engineeri
 - **No backend.** Static site. Audio never leaves the device.
 - **Your recording is the star (v0.3, 2026-11-01).** v0.2's recipes added synthesized layers (sub thumps, metallic rings, noise) that drowned out the recording, and their sliders were hard to relate to the result. Now nothing is synthesized: every control is a plain effect on your own sound, and everything starts off. Presets and sound-specific sliders come back only where mouth, hand and desk sounds can't get there with direct controls.
 - **Build a library.** Recordings are kept and reused. Layers combine them (a slap plus a pitched-down thump makes a big hit).
+- **Record first, organize later (v0.4, 2026-11-01).** A catalog of 40 sound types with walkthroughs felt like homework. Now the home screen is your sounds, newest first, and a big record button sits at the bottom in thumb reach on every screen. One tap records; the recording is saved with a timestamp straight away. Tags and projects are optional and come later. Project needs (the checklist) and learning (how to think like a Foley artist) are two separate doors, kept short.
 - **Variations come from takes.** Record a sound several times in one go; each variation uses a different take, plus an evenly spread pitch. That is far more natural than nudging one recording.
+
+## Screens
+- **Home.** Two doors (Create your checklist; How to think like a Foley artist), then your sounds grouped by day. Each row: a compressed waveform (tap to play; grey as recorded, amber once made into a sound effect), time and length, up to two tags, and boxed counts of projects and kept variations. Tap the rest of the row for tags, projects, "Make variations ›" and Delete (with Undo). A tag bar filters by project, tag or untagged.
+- **Dock.** Record in the middle (the ring follows the input level; 20 s cap), undo/redo on the left, upload on the right. A toast confirms each recording and offers "Tag it".
+- **Checklist.** The sounds your game needs, ticked off as you go, with one-tap suggestions and a count of recordings whose tags match.
+- **How to think like a Foley artist.** Seven swipeable cards; the last one starts a recording.
+- **Sound.** One recording made into a sound effect: the core loop below. Each recording has at most one sound effect, saved with its variations.
+
+First visit seeds three example recordings (tagged "example"). Sessions saved by v0.3 become a library with the old sound effect attached to its first layer's recording; v0.2 sessions become one recording.
 
 ## Core loop
 1. **Record your sounds.** Record or upload; each recording is split into takes automatically (a pause of 150 ms separates them). Handles adjust a take, a slider cleans up background noise, and takes can be added or removed. Built-in examples (three takes each) work without a mic. "Ideas" are short how-tos: what to record, and which settings to start from.
@@ -23,7 +33,7 @@ Solo and small indie game developers with no audio budget and no audio-engineeri
 3. **Variations.** 4 to 12. Pitches are spaced evenly across the pitch spread so no two are alike, every take is used before any repeats, and tone and timing get small nudges. Layers sharing a recording use the same take. Discard and replace single variations; loudness is matched across the set.
 4. **Export** a zip (Ogg Vorbis, MP3 or WAV; 44.1 or 22 kHz) plus a `sound.json` listing layers, takes, effects and each file's pitch, takes and seed.
 
-Undo/redo covers every change, and the session (library included) is saved in the browser as you go. Sessions saved by v0.2 are carried over: the old recording becomes the first library entry.
+Undo/redo covers every change except variations (they keep the settings they were made with), and the library is saved in the browser as you go.
 
 ## Architecture
 - Vite + TypeScript static site. Deploy to GitHub Pages or itch.io.
@@ -44,14 +54,15 @@ Browsers allow the mic only on `https://` or `localhost`. Testing on a phone ove
 src/
   dsp/       sound.ts  prep.ts  blocks.ts  loudness.ts  encode.ts  wav.ts  rng.ts
   sounds/    examples.ts  ideas.ts
-  ui/        library.ts  layers.ts  variations.ts  export.ts  engine.ts
+  ui/        home.ts  recorder.ts  checklist.ts  foley.ts  sound.ts  toast.ts
+             layers.ts  variations.ts  export.ts  engine.ts
              history.ts  persist.ts  trim.ts  controls.ts  playback.ts  state.ts  dom.ts
   main.ts
 tests/       sound.test.ts  prep.test.ts  loudness.test.ts  encode.test.ts  wav.test.ts
 ```
 
 ## Roadmap
-Done: Phase 0 and Phase 1 (2026-10-31), Phase 2 (2026-11-01), v0.3 rework around your own recordings (2026-11-01). Live at https://wolfpox.github.io/we-are-mic-foley/.
+Done: Phase 0 and Phase 1 (2026-10-31), Phase 2 (2026-11-01), v0.3 rework around your own recordings (2026-11-01), v0.4 record-first home screen (2026-11-01). Live at https://wolfpox.github.io/we-are-mic-foley/.
 
 0. **Setup.** Node LTS, git, Vite + TypeScript, Vitest browser tests in Playwright Firefox. The prototype runs as-is from `src/legacy/app.js`.
 1. **Port, no change in sound.** Split into the layout above. Save reference renders of each recipe from the prototype with fixed seeds and test against them. Test the WAV encoder. Remove the 4-second recording cap.

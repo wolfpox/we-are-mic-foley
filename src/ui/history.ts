@@ -1,41 +1,34 @@
 import { $ } from "./dom";
 import { scheduleSave } from "./persist";
-import { copyProject, state, type Project } from "./state";
+import { copyLibrary, state, type Library } from "./state";
 
-/** Everything you've made except the variations (those keep the settings they were made with). */
-export interface Snapshot {
-  project: Project;
-  selClip: string;
-  selTake: number;
-}
+// Undo / redo over the whole library. Variations aren't undone: they keep the settings they were made with.
 
 const LIMIT = 50;
-const undoStack: Snapshot[] = [];
-const redoStack: Snapshot[] = [];
-let current: Snapshot | null = null;
-let restoreFn: (s: Snapshot) => void = () => {};
+const undoStack: Library[] = [];
+const redoStack: Library[] = [];
+let current: Library | null = null;
+let restoreFn: () => void = () => {};
 let restoring = false;
 
-export const snapshot = (): Snapshot => ({ project: copyProject(state.project), selClip: state.selClip, selTake: state.selTake });
-
 /** Recordings never change, so comparing them by id is enough. */
-const key = (s: Snapshot) => JSON.stringify(s.project, (k, v) => (k === "raw" ? undefined : v));
+const key = (l: Library) =>
+  JSON.stringify(l, (k, v) => (k === "raw" || k === "vars" || k === "varMeta" ? undefined : v));
 
 function updateButtons(): void {
-  $<HTMLButtonElement>("undoBtn").disabled = !undoStack.length;
-  $<HTMLButtonElement>("redoBtn").disabled = !redoStack.length;
-  $("undoBar").hidden = !undoStack.length && !redoStack.length;
+  $<HTMLButtonElement>("undoBtn").hidden = !undoStack.length;
+  $<HTMLButtonElement>("redoBtn").hidden = !redoStack.length;
 }
 
-export function initHistory(restore: (s: Snapshot) => void): void {
+export function initHistory(restore: () => void): void {
   restoreFn = restore;
-  current = snapshot();
+  current = copyLibrary(state.lib);
   $("undoBtn").addEventListener("click", undo);
   $("redoBtn").addEventListener("click", redo);
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     // Let text fields undo their own typing
-    if (e.target instanceof HTMLInputElement && e.target.type === "text") return;
+    if (e.target instanceof HTMLInputElement && e.target.type !== "range" && e.target.type !== "checkbox") return;
     const k = e.key.toLowerCase();
     if (k === "z" && !e.shiftKey) undo();
     else if ((k === "z" && e.shiftKey) || k === "y") redo();
@@ -45,20 +38,17 @@ export function initHistory(restore: (s: Snapshot) => void): void {
   updateButtons();
 }
 
-/** Call after a finished change (slider released, recording added, take trimmed…). */
+/** Call after a finished change (slider released, recording added, tag set…). */
 export function commit(): void {
   if (restoring || !current) return;
-  const s = snapshot();
-  if (key(s) === key(current)) {
-    current = s; // selection may have moved
-    scheduleSave();
-    return;
+  const s = copyLibrary(state.lib);
+  if (key(s) !== key(current)) {
+    undoStack.push(current);
+    if (undoStack.length > LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    current = s;
+    updateButtons();
   }
-  undoStack.push(current);
-  if (undoStack.length > LIMIT) undoStack.shift();
-  redoStack.length = 0;
-  current = s;
-  updateButtons();
   scheduleSave();
 }
 
@@ -66,18 +56,26 @@ export function commit(): void {
 export function resetHistory(): void {
   undoStack.length = 0;
   redoStack.length = 0;
-  current = snapshot();
+  current = copyLibrary(state.lib);
   updateButtons();
 }
 
-function go(from: Snapshot[], to: Snapshot[]): void {
+function go(from: Library[], to: Library[]): void {
   const s = from.pop();
   if (!s || !current) return;
   to.push(current);
   current = s;
+  const next = copyLibrary(s);
+  // Keep the variations as they are now
+  for (const [id, d] of Object.entries(next.designs)) {
+    const now = state.lib.designs[id];
+    d.vars = now ? now.vars : [];
+    d.varMeta = now ? now.varMeta : null;
+  }
   restoring = true;
   try {
-    restoreFn({ ...s, project: copyProject(s.project) });
+    state.lib = next;
+    restoreFn();
   } finally {
     restoring = false;
   }

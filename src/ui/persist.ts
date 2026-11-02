@@ -1,9 +1,9 @@
 import { DEFAULT_EXPORT, type ExportOptions } from "../dsp/encode";
 import { findTakes, type Mono, type Range } from "../dsp/prep";
-import { DEFAULT_FX, DEFAULT_SPREAD, defaultLayer, type VarSpec } from "../dsp/sound";
-import { newProject, state, uid, type Clip, type Project, type VarMeta } from "./state";
+import { DEFAULT_FX, DEFAULT_SPREAD, type Effects, type Layer, type Spread } from "../dsp/sound";
+import { fileBase, newLibrary, state, uid, type Clip, type Design, type Library, type SavedVar, type VarMeta } from "./state";
 
-// Saves the session in this browser (IndexedDB) so a refresh or closed tab doesn't lose work.
+// Saves the library in this browser (IndexedDB) so a refresh or closed tab doesn't lose work.
 // Nothing leaves the device. Every call is wrapped so private windows or blocked storage just skip saving.
 // Recordings live in their own store and are written once; the session itself is small.
 
@@ -11,42 +11,47 @@ const DB_NAME = "we-are-mic-foley";
 const SESSION = "session";
 const CLIPS = "clips";
 const KEY = "current";
-const SCHEMA = 2;
+const SCHEMA = 3;
 
 type ClipMeta = Omit<Clip, "raw">;
-type SavedVar = VarSpec & { kept: boolean };
+type SavedDesign = Omit<Design, "varMeta"> & { varMeta: (Omit<VarMeta, "sources"> & { sources: ClipMeta[] }) | null };
 
-interface SavedSession {
+interface SavedV3 {
+  schema: 3;
+  savedAt: number;
+  clips: ClipMeta[];
+  designs: Record<string, SavedDesign>;
+  projects: string[];
+  checklist: Library["checklist"];
+  exportOptions: ExportOptions;
+  evenLoudness: boolean;
+}
+
+/** What v0.3 saved: one project with a library of named recordings. */
+interface SavedV2 {
   schema: 2;
   savedAt: number;
-  project: Omit<Project, "clips"> & { clips: ClipMeta[] };
-  selClip: string;
-  selTake: number;
+  project: { clips: { id: string; name: string; takes: Range[]; gate: number }[]; layers: Layer[]; fx: Effects; spread: Spread; count: number; name: string };
   exportOptions: ExportOptions;
   evenLoudness: boolean;
   vars: SavedVar[];
-  varMeta: (Omit<VarMeta, "sources"> & { sources: ClipMeta[] }) | null;
+  varMeta: (Omit<VarMeta, "sources"> & { sources: { id: string; takes: Range[]; gate: number }[] }) | null;
 }
 
-/** What version 0.2 saved: one recording and a recipe. */
+/** What v0.2 saved: one recording and a recipe. */
 interface SavedV1 {
   schema: 1;
   srcName: string;
   raw: Mono | null;
-  trim: Range | null;
   gate: number;
   exportOptions?: ExportOptions;
   evenLoudness?: boolean;
 }
 
 export interface Loaded {
-  project: Project;
-  selClip: string;
-  selTake: number;
+  lib: Library;
   exportOptions: ExportOptions;
   evenLoudness: boolean;
-  vars: SavedVar[];
-  varMeta: VarMeta | null;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -81,60 +86,98 @@ const get = <T>(store: IDBObjectStore, key: IDBValidKey) =>
 /** Recordings already in the database, so they aren't written again. */
 const stored = new Set<string>();
 
+/** Reads the given recordings in one batch. */
+async function readRaws(ids: string[]): Promise<Map<string, Mono>> {
+  const store = (await db()).transaction(CLIPS, "readonly").objectStore(CLIPS);
+  const found = await Promise.all(ids.map((id) => get<Mono>(store, id)));
+  const raws = new Map<string, Mono>();
+  ids.forEach((id, i) => {
+    const raw = found[i];
+    if (raw) {
+      raws.set(id, raw);
+      stored.add(id);
+    }
+  });
+  return raws;
+}
+
+/** A tag from an old recording name, unless it's a default like "Recording 3". */
+const nameTag = (name: string) => (/^Recording \d+$/.test(name) || !name ? [] : [name.replace(/ \(example\)$/, "").toLowerCase().slice(0, 24)]);
+
 function fromV1(s: SavedV1): Loaded | null {
   if (!s.raw) return null;
-  const project = newProject();
-  const c: Clip = { id: uid(), name: s.srcName || "Recording 1", raw: s.raw, takes: findTakes(s.raw), gate: s.gate ?? 0 };
-  project.clips.push(c);
-  project.layers.push(defaultLayer(c.id));
-  return { project, selClip: c.id, selTake: 0, exportOptions: s.exportOptions ?? DEFAULT_EXPORT, evenLoudness: s.evenLoudness ?? true, vars: [], varMeta: null };
+  const lib = newLibrary();
+  lib.clips.push({ id: uid(), raw: s.raw, takes: findTakes(s.raw), gate: s.gate ?? 0, at: Date.now(), tags: nameTag(s.srcName), projects: [] });
+  return { lib, exportOptions: s.exportOptions ?? DEFAULT_EXPORT, evenLoudness: s.evenLoudness ?? true };
+}
+
+async function fromV2(s: SavedV2): Promise<Loaded> {
+  const p = s.project;
+  const raws = await readRaws(p.clips.map((c) => c.id));
+  const lib = newLibrary();
+  p.clips.forEach((c, i) => {
+    const raw = raws.get(c.id);
+    if (!raw) return;
+    const tags = nameTag(c.name);
+    if (c.name.endsWith("(example)")) tags.unshift("example");
+    lib.clips.push({ id: c.id, raw, takes: c.takes, gate: c.gate, at: s.savedAt - (p.clips.length - i) * 60000, tags, projects: [] });
+  });
+  const main = p.layers[0]?.clip;
+  if (main && raws.has(main)) {
+    const sources = s.varMeta?.sources.flatMap((m) => {
+      const c = lib.clips.find((x) => x.id === m.id);
+      return c ? [{ ...c, takes: m.takes, gate: m.gate }] : [];
+    });
+    const ok = !!s.varMeta && sources?.length === s.varMeta.sources.length;
+    lib.designs[main] = {
+      layers: p.layers.filter((l) => raws.has(l.clip)),
+      fx: { ...DEFAULT_FX, ...p.fx },
+      spread: { ...DEFAULT_SPREAD, ...p.spread },
+      count: p.count,
+      name: fileBase(p.name),
+      vars: ok ? s.vars : [],
+      varMeta: ok ? { ...s.varMeta!, sources: sources! } : null,
+    };
+  }
+  return { lib, exportOptions: s.exportOptions ?? DEFAULT_EXPORT, evenLoudness: s.evenLoudness ?? true };
+}
+
+async function fromV3(s: SavedV3): Promise<Loaded> {
+  const ids = new Set(s.clips.map((c) => c.id));
+  for (const d of Object.values(s.designs)) d.varMeta?.sources.forEach((m) => ids.add(m.id));
+  const raws = await readRaws([...ids]);
+  const withRaw = (list: ClipMeta[]) => list.flatMap((m) => (raws.has(m.id) ? [{ ...m, raw: raws.get(m.id)! }] : []));
+  const lib: Library = { clips: withRaw(s.clips), designs: {}, projects: s.projects ?? [], checklist: s.checklist ?? [] };
+  for (const [id, d] of Object.entries(s.designs)) {
+    if (!lib.clips.some((c) => c.id === id)) continue;
+    const sources = d.varMeta ? withRaw(d.varMeta.sources) : [];
+    const ok = !!d.varMeta && sources.length === d.varMeta.sources.length;
+    lib.designs[id] = {
+      ...d,
+      layers: d.layers.filter((l) => raws.has(l.clip)),
+      fx: { ...DEFAULT_FX, ...d.fx },
+      spread: { ...DEFAULT_SPREAD, ...d.spread },
+      vars: ok ? d.vars : [],
+      varMeta: ok ? { ...d.varMeta!, sources } : null,
+    };
+  }
+  return { lib, exportOptions: s.exportOptions ?? DEFAULT_EXPORT, evenLoudness: s.evenLoudness ?? true };
 }
 
 export async function loadSession(): Promise<Loaded | null> {
   try {
     const d = await db();
-    const s = await get<SavedSession | SavedV1>(d.transaction(SESSION, "readonly").objectStore(SESSION), KEY);
+    const s = await get<SavedV1 | SavedV2 | SavedV3>(d.transaction(SESSION, "readonly").objectStore(SESSION), KEY);
     if (!s) return null;
-    if (s.schema === 1) return fromV1(s);
-    if (s.schema !== SCHEMA) return null;
-    // All reads are started at once, inside one transaction
-    const clipStore = d.transaction(CLIPS, "readonly").objectStore(CLIPS);
-    const ids = [...new Set([...s.project.clips, ...(s.varMeta?.sources ?? [])].map((m) => m.id))];
-    const found = await Promise.all(ids.map((id) => get<Mono>(clipStore, id)));
-    const raws = new Map<string, Mono>();
-    ids.forEach((id, i) => {
-      const raw = found[i];
-      if (raw) {
-        raws.set(id, raw);
-        stored.add(id);
-      }
-    });
-    const withRaw = (list: ClipMeta[]) => list.flatMap((m) => (raws.has(m.id) ? [{ ...m, raw: raws.get(m.id)! }] : []));
-    const project: Project = {
-      ...newProject(),
-      ...s.project,
-      fx: { ...DEFAULT_FX, ...s.project.fx },
-      spread: { ...DEFAULT_SPREAD, ...s.project.spread },
-      clips: withRaw(s.project.clips),
-    };
-    const sources = s.varMeta ? withRaw(s.varMeta.sources) : [];
-    const varMeta = s.varMeta && sources.length === s.varMeta.sources.length ? { ...s.varMeta, sources } : null;
-    void collectGarbage();
-    return {
-      project,
-      selClip: s.selClip,
-      selTake: s.selTake,
-      exportOptions: s.exportOptions ?? DEFAULT_EXPORT,
-      evenLoudness: s.evenLoudness ?? true,
-      vars: varMeta ? s.vars : [],
-      varMeta,
-    };
+    const loaded = s.schema === 1 ? fromV1(s) : s.schema === 2 ? await fromV2(s) : s.schema === SCHEMA ? await fromV3(s) : null;
+    if (loaded) void collectGarbage();
+    return loaded;
   } catch {
     return null;
   }
 }
 
-/** Deletes stored recordings nothing refers to any more (deleted from the library in an earlier visit). */
+/** Deletes stored recordings nothing refers to any more (deleted in an earlier visit). */
 async function collectGarbage(): Promise<void> {
   try {
     const t = (await db()).transaction(CLIPS, "readwrite");
@@ -156,18 +199,19 @@ export function setExportReader(fn: () => ExportOptions): void {
 
 const meta = ({ raw: _raw, ...m }: Clip): ClipMeta => m;
 
-function collect(): SavedSession {
-  const p = state.project;
+function collect(): SavedV3 {
+  const l = state.lib;
   return {
     schema: SCHEMA,
     savedAt: Date.now(),
-    project: { ...p, clips: p.clips.map(meta) },
-    selClip: state.selClip,
-    selTake: state.selTake,
+    clips: l.clips.map(meta),
+    designs: Object.fromEntries(
+      Object.entries(l.designs).map(([id, d]) => [id, { ...d, varMeta: d.varMeta && { ...d.varMeta, sources: d.varMeta.sources.map(meta) } }]),
+    ),
+    projects: l.projects,
+    checklist: l.checklist,
     exportOptions: readExport(),
     evenLoudness: state.evenLoudness,
-    vars: state.vars.map((v) => ({ seed: v.seed, pitch: v.pitch, takes: v.takes, kept: v.kept })),
-    varMeta: state.varMeta && { ...state.varMeta, sources: state.varMeta.sources.map(meta) },
   };
 }
 
@@ -177,7 +221,8 @@ let queued = false;
 function save(): void {
   queued = false;
   const session = collect();
-  const fresh = [...state.project.clips, ...(state.varMeta?.sources ?? [])].filter((c) => !stored.has(c.id));
+  const all = [...state.lib.clips, ...Object.values(state.lib.designs).flatMap((d) => d.varMeta?.sources ?? [])];
+  const fresh = [...new Map(all.filter((c) => !stored.has(c.id)).map((c) => [c.id, c])).values()];
   void db()
     .then((d) => {
       const t = d.transaction([SESSION, CLIPS], "readwrite");

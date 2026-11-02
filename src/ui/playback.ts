@@ -39,7 +39,7 @@ export function playSequence(bufs: (AudioBuffer | null)[], gapMs = 250): void {
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /** Draws a waveform. `bands` marks parts of it (e.g. takes) in sample positions. */
-export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | Float32Array | null, bands: { start: number; end: number }[] = []): void {
+export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | Float32Array | null, bands: { start: number; end: number }[] = [], color = "--wave"): void {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -56,7 +56,7 @@ export function drawWave(canvas: HTMLCanvasElement, buf: AudioBuffer | Float32Ar
   const step = d.length / w;
   g.fillStyle = cssVar("--band");
   for (const b of bands) g.fillRect(b.start / step, 0, Math.max(1, (b.end - b.start) / step), h);
-  g.fillStyle = cssVar("--wave");
+  g.fillStyle = cssVar(color);
   for (let x = 0; x < w; x++) {
     let mn = 1;
     let mx = -1;
